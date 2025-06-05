@@ -7,6 +7,11 @@ app = Flask(__name__)
 print("✅ הקובץ app.py התחיל לרוץ")
 
 
+@app.route("/", methods=["GET"])
+def health_check():
+    return "InsightBot is alive!", 200
+
+
 def get_db_connection():
     try:
         conn = psycopg2.connect(
@@ -49,7 +54,7 @@ def save_to_db(event, full_payload):
         VALUES (%s, %s, %s, %s, to_timestamp(%s), %s, %s)
         ON CONFLICT (event_id) DO NOTHING
     """, (
-        event.get("ts"),  # משמש כ־event_id
+        event.get("ts"),
         event.get("channel"),
         event.get("user"),
         event.get("text"),
