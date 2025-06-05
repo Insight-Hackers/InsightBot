@@ -12,9 +12,9 @@ def get_db_connection():
         conn = psycopg2.connect(
             dbname="postgres",
             user="postgres",
-            password="insightbot2025",
-            host="db.apphxbmngxlclxromyvt.supabase.co",
-            port="5432"
+            password="insightbot2025",  # ✏️ שימי את הסיסמה האמיתית שלך פה
+            host="aws-0-eu-north-1.pooler.supabase.com",
+            port="6543"
         )
         print("🟢 התחברות למסד הצליחה")
         return conn
@@ -25,16 +25,8 @@ def get_db_connection():
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
-    print("🔥 קיבלתי POST מ־Slack")
-    print("🔥 request.data:", request.data)
-    print("🔥 request.content_type:", request.content_type)
-
-    try:
-        data = request.get_json(force=True)
-        print("📥 JSON שהתקבל:", json.dumps(data, indent=2))
-    except Exception as e:
-        print("❌ שגיאה בפרסור JSON:", e)
-        return "Bad Request", 400
+    data = request.json
+    print("📥 התקבלה בקשה מ-Slack:", json.dumps(data, indent=2))
 
     if "challenge" in data:
         return data["challenge"], 200
@@ -46,9 +38,6 @@ def slack_events():
             print("✅ הודעה נשמרה במסד בהצלחה")
         except Exception as e:
             print("❌ שגיאה בשמירת הודעה:", e)
-    else:
-        print("ℹ️ האירוע שהתקבל אינו הודעת טקסט רגילה")
-
     return "", 200
 
 
@@ -73,11 +62,6 @@ def save_to_db(event, full_payload):
     conn.close()
 
 
-@app.route("/", methods=["GET", "HEAD"])
-def root():
-    return "👋 InsightBot Flask API פעיל", 200
-
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
