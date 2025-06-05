@@ -34,15 +34,22 @@ def slack_events():
     print("📥 התקבלה בקשה מ-Slack:", json.dumps(data, indent=2))
 
     if "challenge" in data:
+        print("✅ Challenge נשלח חזרה ל-Slack")
         return data["challenge"], 200
 
     event = data.get("event", {})
-    if event.get("type") == "message" and "subtype" not in event:
-        try:
-            save_to_db(event, data)
-            print("✅ הודעה נשמרה במסד בהצלחה")
-        except Exception as e:
-            print("❌ שגיאה בשמירת הודעה:", e)
+    print("📌 סוג אירוע שהתקבל:", event.get("type"))
+
+    if event.get("type") == "message":
+        print("📌 תוכן ההודעה:", event)
+        if "subtype" not in event:
+            try:
+                save_to_db(event, data)
+                print("✅ הודעה נשמרה במסד בהצלחה")
+            except Exception as e:
+                print("❌ שגיאה בשמירת הודעה:", e)
+        else:
+            print("⚠️ יש subtype, ההודעה לא תישמר")
     return "", 200
 
 
