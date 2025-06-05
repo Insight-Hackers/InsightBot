@@ -30,8 +30,11 @@ def get_db_connection():
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
+
     data = request.json
     print("📥 התקבלה בקשה מ-Slack:", json.dumps(data, indent=2))
+    print("🔥 Raw data:", request.data)
+    print("🔥 JSON data:", request.json)
 
     if "challenge" in data:
         print("✅ Challenge נשלח חזרה ל-Slack")
