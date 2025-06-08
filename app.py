@@ -57,6 +57,8 @@ def save_to_db(event, full_payload):
 
     event_type = event.get("type")
     is_reaction = event_type in ["reaction_added", "reaction_removed"]
+    if event_type == "message" and event.get("thread_ts") and event.get("thread_ts") != event.get("ts"):
+        event_type = "concatenation"
 
     ts = float(event.get("ts") or event.get("event_ts"))
     event_id = event.get("ts") or event.get("event_ts")
