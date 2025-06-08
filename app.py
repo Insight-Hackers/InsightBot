@@ -12,7 +12,7 @@ def get_db_connection():
         conn = psycopg2.connect(
             dbname="postgres",
             user="postgres.apphxbmngxlclxromyvt",
-            password="עדילוסטיג2025",  # ✏ הסיסמה שלך כאן
+            password="עדילוסטיג2025",  # ✏️ עדכני אם צריך
             host="aws-0-eu-north-1.pooler.supabase.com",
             port="6543"
         )
@@ -34,7 +34,6 @@ def slack_events():
     event = data.get("event", {})
     event_type = event.get("type")
 
-    # הודעה רגילה
     if event_type == "message" and "subtype" not in event:
         try:
             save_to_db(event, data)
@@ -42,7 +41,6 @@ def slack_events():
         except Exception as e:
             print("❌ שגיאה בשמירת הודעה:", e)
 
-    # תגובה
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
             save_to_db(event, data)
@@ -92,6 +90,6 @@ def save_to_db(event, full_payload):
     conn.close()
 
 
-if __name__ == "_main_":
-    port = int(os.environ.get("PORT", 5000))
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
