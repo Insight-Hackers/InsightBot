@@ -24,6 +24,17 @@
             font-size: 1.6rem;
             font-weight: bold;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        header a {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: white;
+            text-decoration: underline;
+            font-size: 1rem;
         }
 
         main {
@@ -58,6 +69,15 @@
 
         #refresh-btn:hover {
             background-color: #004d40;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
         }
 
         #messages-list {
@@ -117,10 +137,14 @@
     </style>
 </head>
 <body>
-    <header>הודעות Slack אחרונות</header>
+    <header>
+        הודעות Slack אחרונות
+        <a href="/stats">סטטיסטיקה</a>
+    </header>
 
     <main>
         <button id="refresh-btn">רענן הודעות</button>
+        <input type="text" id="search-input" placeholder="חפש בהודעות...">
         <ul id="messages-list">
             <li>טוען הודעות...</li>
         </ul>
@@ -129,6 +153,8 @@
     <script>
         const refreshBtn = document.getElementById('refresh-btn');
         const messagesList = document.getElementById('messages-list');
+        const searchInput = document.getElementById('search-input');
+        let allMessages = [];
 
         function formatTimestamp(ts) {
             if (!ts) return '';
@@ -143,27 +169,33 @@
             });
         }
 
-        function fetchMessages() {
-            messagesList.innerHTML = '<li>טוען הודעות...</li>';
+        function renderMessages(filteredMessages = allMessages) {
+            messagesList.innerHTML = '';
+            if (filteredMessages.length === 0) {
+                messagesList.innerHTML = '<li>אין הודעות להצגה</li>';
+                return;
+            }
+
+            filteredMessages.forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = 
+                    `<span class="timestamp">[${formatTimestamp(item.ts)}]</span>` +
+                    `<span class="user-id"> משתמש: ${item.user_id}</span>` +
+                    `<span class="channel-id"> בערוץ: ${item.channel_id}</span>` +
+                    `<span class="message-text"> - ${item.text || ''}</span>`;
+                messagesList.appendChild(li);
+            });
+        }
+
+        function fetchMessages(isManual = false) {
+            if (isManual) {
+                messagesList.innerHTML = '<li>טוען הודעות...</li>';
+            }  
             fetch('/api/slack_messages_raw')
                 .then(response => response.json())
                 .then(data => {
-                    messagesList.innerHTML = '';
-                    if (data.length === 0) {
-                        messagesList.innerHTML = '<li>אין הודעות להצגה</li>';
-                        return;
-                    }
-                    data.forEach(item => {
-                        const li = document.createElement('li');
-
-                        li.innerHTML = 
-                            `<span class="timestamp">[${formatTimestamp(item.ts)}]</span>` +
-                            `<span class="user-id"> משתמש: ${item.user_id}</span>` +
-                            `<span class="channel-id"> בערוץ: ${item.channel_id}</span>` +
-                            `<span class="message-text"> - ${item.text || ''}</span>`;
-
-                        messagesList.appendChild(li);
-                    });
+                    allMessages = data;
+                    renderMessages();
                 })
                 .catch(error => {
                     console.error('Error fetching messages:', error);
@@ -172,6 +204,20 @@
         }
 
         refreshBtn.addEventListener('click', fetchMessages);
+
+        // רענון כל 30 שניות
+        setInterval(fetchMessages, 30000);
+
+        // חיפוש
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.toLowerCase();
+            const filtered = allMessages.filter(item =>
+                (item.text && item.text.toLowerCase().includes(query)) ||
+                (item.user_id && item.user_id.toLowerCase().includes(query)) ||
+                (item.channel_id && item.channel_id.toLowerCase().includes(query))
+            );
+            renderMessages(filtered);
+        });
 
         // טען הודעות כשעמוד נטען
         window.onload = fetchMessages;

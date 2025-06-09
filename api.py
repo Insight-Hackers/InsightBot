@@ -26,6 +26,10 @@ def get_db_connection():
 def index():
     return render_template('index.html')
 
+@app.route('/stats')
+def stats():
+    return render_template('stats.html')
+
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
     data = request.json
