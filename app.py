@@ -50,6 +50,18 @@ def slack_events():
 
     return "", 200
 
+def extract_text_from_blocks(blocks):
+    texts = []
+    if not blocks:
+        return None
+
+    for block in blocks:
+        if block.get("type") == "section":
+            text_obj = block.get("text")
+            if text_obj and text_obj.get("type") in ["plain_text", "mrkdwn"]:
+                texts.append(text_obj.get("text", "").strip())
+
+    return "\n".join(texts) if texts else None
 
 def save_to_db(event, full_payload):
     conn = get_db_connection()
@@ -64,7 +76,8 @@ def save_to_db(event, full_payload):
     ts = float(event.get("ts") or event.get("event_ts"))
     event_id = event.get("ts") or event.get("event_ts")
     parent_event_id = None
-    text = event.get("text")
+    text = event.get("text") or extract_text_from_blocks(event.get("blocks"))
+
 
     if is_reaction:
         text = f":{event.get('reaction')}: by {event.get('user')}"
