@@ -87,16 +87,16 @@ def save_to_db(event, full_payload):
 
     # 📝 הכנסת הנתונים לטבלה
     cur.execute("""
-        INSERT INTO slack_messages_raw (
-            event_id, channel_id, user_id, text, ts, thread_ts,
-            raw, event_type, parent_event_id,
-            is_list, list_items, num_list_items
-        )
-        VALUES (%s, %s, %s, %s, to_timestamp(%s), %s,
-                %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (event_id) DO NOTHING
-    """, (
-        event_id,
+    INSERT INTO slack_messages_raw (
+        id, channel_id, user_id, text, ts, thread_ts,
+        raw, event_type, parent_id,
+        is_list, list_items, num_list_items
+    )
+    VALUES (%s, %s, %s, %s, to_timestamp(%s), %s,
+            %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (id) DO NOTHING
+""", (
+        event_id,  # משתנה ב-Python ששמו event_id, אבל עמודה נקראת id
         event["item"]["channel"] if is_reaction else event.get("channel"),
         event.get("user"),
         text,
