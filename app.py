@@ -81,10 +81,10 @@ def delete_from_db(event):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    deleted_ts = event.get("deleted_ts")
+    deleted_ts = event.get("deleted_ts") or event.get("previous_message", {}).get("ts")
     channel_id = event.get("channel")
     previous_message = event.get("previous_message", {})
-    user_id = previous_message.get("user")
+    user_id = previous_message.get("user", "unknown")
 
     if not deleted_ts:
         print("⚠ לא נמצא deleted_ts באירוע")
@@ -93,23 +93,28 @@ def delete_from_db(event):
     cur.execute("""
         INSERT INTO slack_messages_raw (
             event_id, channel_id, user_id, text, ts,
-            raw, event_type
+            thread_ts, raw, event_type, parent_event_id
         )
         VALUES (%s, %s, %s, %s, to_timestamp(%s),
-                %s, %s, %s)
+                %s, %s, %s, %s)
+        ON CONFLICT (event_id) DO NOTHING
     """, (
-        deleted_ts,
-        channel_id,
-        user_id,
-        "[DELETED]",
-        float(deleted_ts),
-        json.dumps(event),
-        "message_removed",  # 🟢 כמו שביקשת
+        deleted_ts,               # event_id
+        channel_id,               # channel_id
+        user_id,                  # user_id
+        "[DELETED]",              # text
+        float(deleted_ts),        # ts
+        None,                     # thread_ts (לא רלוונטי למחיקה)
+        json.dumps(event),        # raw
+        "message_removed",        # event_type
+        None                      # parent_event_id
     ))
 
     conn.commit()
     cur.close()
     conn.close()
+
+
 def save_to_db(event, full_payload):
     conn = get_db_connection()
     cur = conn.cursor()
