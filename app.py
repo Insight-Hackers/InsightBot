@@ -290,4 +290,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     print(f"✅ הקובץ app.py התחיל לרוץ ב-port {port}")
     app.run(host="0.0.0.0", port=port)
-# בםמיח'קלצ# app.run(debug=True)  # אפשר להפעיל במצב דיבאג אם צריך
+# בםמיח'קלצ# app .run(debug=True)  # אפשר להפעיל במצב דיבאג אם צריך
