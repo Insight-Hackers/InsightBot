@@ -49,7 +49,7 @@ def verify_signature(payload_body, signature_header):
     return valid
 
 
-def save_dataframe_to_db(df, table_name):
+def save_dataframe_to_db(df, table_name, pk_column):
     if df.empty:
         print(f"⚠️ הטבלה {table_name} ריקה - לא נשמר כלום")
         return
@@ -59,7 +59,7 @@ def save_dataframe_to_db(df, table_name):
     try:
         for column in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[column]):
-                # המרה עם טיפול ב-NaT
+                # החלפת NaT ב-None
                 df[column] = df[column].where(df[column].notna(), None)
             elif pd.api.types.is_object_dtype(df[column]):
                 df[column] = df[column].apply(
@@ -69,10 +69,10 @@ def save_dataframe_to_db(df, table_name):
             cols = ','.join(df.columns)
             placeholders = ','.join(['%s'] * len(df.columns))
             update_cols = ', '.join(
-                [f"{col}=EXCLUDED.{col}" for col in df.columns if col != 'id'])
+                [f"{col}=EXCLUDED.{col}" for col in df.columns if col != pk_column])
             sql = f"""
                 INSERT INTO {table_name} ({cols}) VALUES ({placeholders})
-                ON CONFLICT (id) DO UPDATE SET {update_cols}
+                ON CONFLICT ({pk_column}) DO UPDATE SET {update_cols}
             """
             cursor.execute(sql, tuple(row))
 
@@ -100,6 +100,20 @@ def filter_columns_for_table(df, table_name):
     }
     cols_to_keep = table_columns.get(table_name, [])
     return df.loc[:, df.columns.intersection(cols_to_keep)]
+
+
+# מיפוי מפתח ראשי לכל טבלה
+PRIMARY_KEYS = {
+    'slack_messages_raw': 'id',
+    'alerts': 'id',
+    'github_commits_raw': 'sha',
+    'github_issues_raw': 'id',
+    'github_prs_raw': 'id',
+    'github_reviews_raw': 'id',
+    'slack_reports_raw': 'id',
+    # Composite key in DB, כאן עשוי להיות צורך בהתאמה מיוחדת
+    'user_daily_summary': 'user_id',
+}
 
 
 @app.route("/slack/events", methods=["POST"])
@@ -145,7 +159,8 @@ def slack_events():
 
     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
 
-    save_dataframe_to_db(df_filtered, 'slack_messages_raw')
+    save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                         PRIMARY_KEYS['slack_messages_raw'])
     print("✅ Slack message נשמר למסד")
 
     return "", 200
@@ -194,7 +209,8 @@ def github_webhook():
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_prs_raw')
-            save_dataframe_to_db(df_filtered, 'github_prs_raw')
+            save_dataframe_to_db(df_filtered, 'github_prs_raw',
+                                 PRIMARY_KEYS['github_prs_raw'])
             print(f"💾 PR #{pr.get('number', '')} נשמר במסד")
 
     elif event_type == "issues":
@@ -222,7 +238,8 @@ def github_webhook():
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_issues_raw')
-            save_dataframe_to_db(df_filtered, 'github_issues_raw')
+            save_dataframe_to_db(
+                df_filtered, 'github_issues_raw', PRIMARY_KEYS['github_issues_raw'])
             print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
 
     elif event_type == "push":
@@ -248,7 +265,8 @@ def github_webhook():
                     df['timestamp'], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_commits_raw')
-            save_dataframe_to_db(df_filtered, 'github_commits_raw')
+            save_dataframe_to_db(
+                df_filtered, 'github_commits_raw', PRIMARY_KEYS['github_commits_raw'])
             print(f"💾 נשמרו {len(df_filtered)} קומיטים במסד")
 
     elif event_type == "pull_request_review":
@@ -260,7 +278,10 @@ def github_webhook():
             df['pull_request_id'] = str(pr_id) if pr_id is not None else None
 
             if 'id' not in df.columns:
-                df['id'] = df['id'].astype(str) if 'id' in df.columns else None
+                if 'id' in df.columns:
+                    df['id'] = df['id'].astype(str)
+                else:
+                    df['id'] = None
 
             df.rename(columns={
                 'user.login': 'user_id',
@@ -277,7 +298,8 @@ def github_webhook():
                     df['created_at'], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_reviews_raw')
-            save_dataframe_to_db(df_filtered, 'github_reviews_raw')
+            save_dataframe_to_db(
+                df_filtered, 'github_reviews_raw', PRIMARY_KEYS['github_reviews_raw'])
             print(f"💾 Review #{review.get('id', '')} נשמר במסד")
 
     else:
@@ -290,4 +312,3 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     print(f"✅ הקובץ app.py התחיל לרוץ ב-port {port}")
     app.run(host="0.0.0.0", port=port)
-# בםמיח'קלצ# app .run(debug=True)  # אפשר להפעיל במצב דיבאג אם צריך
