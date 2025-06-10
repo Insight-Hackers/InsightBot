@@ -81,34 +81,14 @@ def delete_from_db(event):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    deleted_ts = event.get("deleted_ts") or event.get("previous_message", {}).get("ts")
-    channel_id = event.get("channel")
-    previous_message = event.get("previous_message", {})
-    user_id = previous_message.get("user", "unknown")
+    original_event_id = event["deleted_ts"] # זה יהיה ה-parent_event_id
+    new_event_id = str(uuid.uuid4()) # יצירת event ID ייחודי חדש
 
-    if not deleted_ts:
-        print("⚠ לא נמצא deleted_ts באירוע")
-        return
-
-    cur.execute("""
-        INSERT INTO slack_messages_raw (
-            event_id, channel_id, user_id, text, ts,
-            thread_ts, raw, event_type, parent_event_id
-        )
-        VALUES (%s, %s, %s, %s, to_timestamp(%s),
-                %s, %s, %s, %s)
-        ON CONFLICT (event_id) DO NOTHING
-    """, (
-        deleted_ts,               # event_id
-        channel_id,               # channel_id
-        user_id,                  # user_id
-        "[DELETED]",              # text
-        float(deleted_ts),        # ts
-        None,                     # thread_ts (לא רלוונטי למחיקה)
-        json.dumps(event),        # raw
-        "message_removed",        # event_type
-        None                      # parent_event_id
-    ))
+    # הכנסת שורה חדשה במקום מחיקה
+    cur.execute(
+        "INSERT INTO slack_messages_raw (event_id, parent_event_id, event_type) VALUES (%s, %s, %s)",
+        (new_event_id, original_event_id, 'MESSAGE DELETED')
+    )
 
     conn.commit()
     cur.close()
