@@ -168,6 +168,10 @@ def github_webhook():
 
     print(f"📢 GitHub event received: {event_type}")
 
+    if event_type == "ping":
+        print("✅ Received ping event from GitHub")
+        return "", 200
+
     if event_type == "pull_request":
         pr = data.get("pull_request")
         if pr:
