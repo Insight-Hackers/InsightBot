@@ -9,7 +9,6 @@ import traceback
 
 app = Flask(__name__)
 
-# טען את ה־Secret מהמשתנה סביבתי (ללא hardcoding)
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
@@ -47,8 +46,6 @@ def verify_signature(payload_body, signature_header):
     mac = hmac.new(GITHUB_SECRET, msg=payload_body, digestmod=hashlib.sha256)
     valid = hmac.compare_digest(mac.hexdigest(), signature)
     print(f"🔐 חתימה תקינה? {valid}")
-    print(f"🔐 חתימה שנשלחה: {signature_header}")
-    print(f"🔐 חתימה שחישבתי: sha256={mac.hexdigest()}")
     return valid
 
 
@@ -60,12 +57,13 @@ def save_dataframe_to_db(df, table_name):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # המרת תאריכים וסוגי עמודות למתאימים
         for column in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[column]):
                 df[column] = df[column].dt.to_pydatetime()
             elif pd.api.types.is_object_dtype(df[column]):
-                df[column] = df[column].astype(str)
+                # המרה ל-str רק אם הערך אינו None
+                df[column] = df[column].apply(
+                    lambda x: str(x) if x is not None else None)
 
         for _, row in df.iterrows():
             cols = ','.join(df.columns)
@@ -148,7 +146,6 @@ def slack_events():
     df['is_list'] = df['list_items'].apply(lambda x: bool(x))
     df['num_list_items'] = df['list_items'].apply(lambda x: len(x) if x else 0)
 
-    # סינון העמודות לטבלה
     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
 
     save_dataframe_to_db(df_filtered, 'slack_messages_raw')
@@ -185,7 +182,7 @@ def github_webhook():
 
             df.rename(columns={
                 'user.login': 'user_id',
-                'repository_url': 'repository',
+                'repository.full_name': 'repository',
                 'html_url': 'url'
             }, inplace=True)
 
@@ -212,7 +209,7 @@ def github_webhook():
 
             df.rename(columns={
                 'user.login': 'user_id',
-                'repository_url': 'repository',
+                'repository.full_name': 'repository',
                 'html_url': 'url'
             }, inplace=True)
 
