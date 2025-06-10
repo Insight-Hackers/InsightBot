@@ -115,6 +115,6 @@ def save_to_db(event, full_payload):
     conn.close()
 
 
-if __name__ == "main":
+if __name__ == "__main__":  # ✅ נכוןשפפץ
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
