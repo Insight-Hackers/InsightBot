@@ -105,36 +105,32 @@ def slack_events():
     print("📥 Slack event received:")
     print(json.dumps(data, indent=2))
 
-    # נניח שאת רוצה לשמור רק הודעות רגילות (message type, ללא subtype)
     event = data.get("event", {})
-    event_type = event.get("type")
+    df = pd.json_normalize([event])
 
-    if event_type == "message" and "subtype" not in event:
-        # ניצור DataFrame לשמירה
-        df = pd.json_normalize([event])
-
-        # וודא שיש עמודה 'id' (משתמש ב-'ts')
-        if 'id' not in df.columns:
-            if 'ts' in df.columns:
-                df['id'] = df['ts'].astype(str)
-            else:
-                df['id'] = pd.util.hash_pandas_object(df).astype(str)
-
-        # שינויים בשמות עמודות לפי הטבלה שלך אם צריך
-        df.rename(columns={
-            'user': 'user_id',
-            'channel': 'channel_id',
-        }, inplace=True)
-
-        # המרת ts למספר או מחרוזת (תלוי איך שמורה בטבלה)
+    if 'id' not in df.columns:
         if 'ts' in df.columns:
-            df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
+            df['id'] = df['ts'].astype(str)
+        else:
+            df['id'] = pd.util.hash_pandas_object(df).astype(str)
 
-        # שמירת האירוע לטבלה slack_messages_raw
-        save_dataframe_to_db(df, 'slack_messages_raw')
-        print("✅ Slack message נשמר למסד")
+    df.rename(columns={
+        'user': 'user_id',
+        'channel': 'channel_id',
+    }, inplace=True)
+
+    # טיפול ב-`type`
+    if 'type' in df.columns:
+        df = df.rename(columns={'type': 'event_type'})  # או להסיר אם אין בטבלה
+
+    if 'ts' in df.columns:
+        df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
+
+    save_dataframe_to_db(df, 'slack_messages_raw')
+    print("✅ Slack message נשמר למסד")
 
     return "", 200
+
 
 # ========================
 # Endpoint לטיפול ב־GitHub webhook
