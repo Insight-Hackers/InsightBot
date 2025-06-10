@@ -34,6 +34,7 @@ def get_db_connection():
 
 def verify_signature(payload_body, signature_header):
     if signature_header is None:
+        print("❌ לא נמצא header של חתימה")
         return False
     try:
         sha_name, signature = signature_header.split('=')
@@ -44,7 +45,11 @@ def verify_signature(payload_body, signature_header):
         print(f"❌ סוג חתימה לא נתמך: {sha_name}")
         return False
     mac = hmac.new(GITHUB_SECRET, msg=payload_body, digestmod=hashlib.sha256)
-    return hmac.compare_digest(mac.hexdigest(), signature)
+    valid = hmac.compare_digest(mac.hexdigest(), signature)
+    print(f"🔐 חתימה תקינה? {valid}")
+    print(f"🔐 חתימה שנשלחה: {signature_header}")
+    print(f"🔐 חתימה שחישבתי: sha256={mac.hexdigest()}")
+    return valid
 
 
 def save_dataframe_to_db(df, table_name):
@@ -55,6 +60,7 @@ def save_dataframe_to_db(df, table_name):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # המרת תאריכים וסוגי עמודות למתאימים
         for column in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[column]):
                 df[column] = df[column].dt.to_pydatetime()
@@ -107,11 +113,13 @@ def slack_events():
     event = data.get("event", {})
     df = pd.json_normalize([event])
 
-    if 'id' not in df.columns:
-        if 'ts' in df.columns:
-            df['id'] = df['ts'].astype(str)
-        else:
-            df['id'] = pd.util.hash_pandas_object(df).astype(str)
+    # השתמש ב-client_msg_id או ts כמפתח ראשי id
+    if 'client_msg_id' in df.columns:
+        df['id'] = df['client_msg_id'].astype(str)
+    elif 'ts' in df.columns:
+        df['id'] = df['ts'].astype(str)
+    else:
+        df['id'] = pd.util.hash_pandas_object(df).astype(str)
 
     df.rename(columns={
         'user': 'user_id',
@@ -122,6 +130,25 @@ def slack_events():
     if 'ts' in df.columns:
         df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
 
+    # המרת json הגולמי של האירוע לעמודת raw
+    df['raw'] = df.apply(lambda row: json.dumps(event), axis=1)
+
+    # טיפול ב-list_items - מזהה פריטים ברשימה
+    def extract_list_items(text):
+        if not isinstance(text, str):
+            return None
+        lines = text.splitlines()
+        items = []
+        for line in lines:
+            if line.strip().startswith(("* ", "- ", "• ")):
+                items.append(line[2:].strip())
+        return items if items else None
+
+    df['list_items'] = df['text'].apply(extract_list_items)
+    df['is_list'] = df['list_items'].apply(lambda x: bool(x))
+    df['num_list_items'] = df['list_items'].apply(lambda x: len(x) if x else 0)
+
+    # סינון העמודות לטבלה
     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
 
     save_dataframe_to_db(df_filtered, 'slack_messages_raw')
@@ -198,7 +225,8 @@ def github_webhook():
             save_dataframe_to_db(df_filtered, 'github_issues_raw')
             print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
 
-    # הוסף טיפול לאירועים נוספים לפי הצורך
+    else:
+        print(f"⚠️ אירוע לא מטופל: {event_type}")
 
     return "", 200
 
