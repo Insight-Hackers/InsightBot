@@ -1,0 +1,527 @@
+import pandas as pd
+import re
+from datetime import datetime
+from functools import reduce
+from tabulate import tabulate
+import uuid
+import psycopg2
+
+# --- פונקציות חיבורים לדאטא בייס ---
+
+
+def get_db_connection():
+    """מקים חיבור למסד הנתונים של Supabase."""
+    return psycopg2.connect(
+        dbname="postgres",
+        user="postgres.apphxbmngxlclxromyvt",
+        password="insightbot2025",
+        host="aws-0-eu-north-1.pooler.supabase.com",
+        port="6543"
+    )
+
+# --- פונקציות טעינת נתונים גולמיים מ-Supabase ---
+
+
+def load_slack_messages():
+    """טוען הודעות Slack גולמיות מטבלת slack_messages_raw."""
+    conn = get_db_connection()
+    query = "SELECT * FROM slack_messages_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        # ודא שיש עמודת user_id, שנה מ'user' אם קיים
+        if 'user' in df.columns and 'user_id' not in df.columns:
+            df = df.rename(columns={'user': 'user_id'})
+        return df
+    finally:
+        conn.close()
+
+
+def load_slack_reports():
+    """טוען דוחות Slack מטבלת slack_reports_raw."""
+    conn = get_db_connection()
+    query = "SELECT * FROM slack_reports_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            # הגדר עמודות צפויות עבור DataFrame ריק
+            return pd.DataFrame(columns=['id', 'user_id', 'text', 'ts', 'channel_id', 'report_type', 'status'])
+        return df
+    finally:
+        conn.close()
+
+
+def load_github_issues():
+    """טוען גיליונות (issues) מ-GitHub מטבלת github_issues_raw."""
+    conn = get_db_connection()
+    query = "SELECT * FROM github_issues_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            # הגדר עמודות צפויות עבור DataFrame ריק
+            return pd.DataFrame(columns=['id', 'user_id', 'title', 'body', 'state', 'created_at', 'closed_at', 'repository', 'url', 'is_critical'])
+        return df
+    finally:
+        conn.close()
+
+
+def load_github_commits():
+    """טוען קומיטים מ-GitHub מטבלת github_commits_raw."""
+    conn = get_db_connection()
+    query = "SELECT * FROM github_commits_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            # הגדר עמודות צפויות עבור DataFrame ריק
+            return pd.DataFrame(columns=['sha', 'author', 'message', 'timestamp', 'repository', 'url'])
+        # ודא שעמודת 'author' משונה ל-'user_id' אם יש צורך
+        if 'author' in df.columns and 'user_id' not in df.columns:
+            df = df.rename(columns={'author': 'user_id'})
+        return df
+    finally:
+        conn.close()
+
+
+def load_github_reviews():
+    """טוען ביקורות (reviews) מ-GitHub מטבלת github_reviews_raw."""
+    conn = get_db_connection()
+    query = "SELECT * FROM github_reviews_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            # הגדר עמודות צפויות עבור DataFrame ריק
+            return pd.DataFrame(columns=['id', 'pull_request_id', 'user_id', 'state', 'body', 'created_at', 'url'])
+        return df
+    finally:
+        conn.close()
+
+
+def load_github_prs():
+    """טוען בקשות משיכה (pull requests) מ-GitHub מטבלת github_prs_raw."""
+    conn = get_db_connection()
+    query = "SELECT * FROM github_prs_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            # הגדר עמודות צפויות עבור DataFrame ריק
+            return pd.DataFrame(columns=['id', 'user_id', 'title', 'state', 'created_at', 'closed_at', 'merged_at', 'repository', 'url'])
+        return df
+    finally:
+        conn.close()
+
+# --- פונקציות אנליזה ---
+
+
+def analyze_total_messages(slack_df):
+    """מנתח את סך ההודעות שנשלחו על ידי כל משתמש ביום."""
+    slack_df['date'] = pd.to_datetime(slack_df['ts'], unit='s').dt.date
+    return slack_df.groupby(['user_id', 'date']).size().reset_index(name='total_messages')
+
+
+def analyze_help_requests(slack_df):
+    """מזהה ומנתח בקשות עזרה מהודעות Slack."""
+    help_keywords = ["עזרה", "בעיה", "שאלה", "לא מצליח", "נתקע", "תקוע",
+                     "איזה שלב", "איך ממשיכים", "מה עושים", "מישהו יכול לעזור",
+                     "לא עובד", "משהו לא תקין", "צריך עזרה",
+                     "help", "stuck", "issue", "problem", "need help", "can't", "error", "?",
+                     "🆘", "❓", "🙋‍♀️"]
+    pattern = '|'.join(map(re.escape, help_keywords))
+    help_msgs = slack_df[slack_df['text'].str.contains(
+        pattern, case=False, na=False)].copy()
+    help_msgs['type'] = 'help_request'
+    help_msgs['date'] = pd.to_datetime(help_msgs['ts'], unit='s').dt.date
+    return help_msgs
+
+
+def analyze_help_requests_count(slack_df):
+    """סופר את מספר בקשות העזרה לכל משתמש ביום."""
+    help_df = analyze_help_requests(slack_df)
+    return help_df.groupby(['user_id', 'date']).size().reset_index(name='help_requests')
+
+
+def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_issues_df):
+    """מנתח תגובות להודעות ומנסה לקבוע סטטוס פתרון."""
+    if 'parent_id' in replies_df.columns and not replies_df.empty:
+        replies_count = replies_df.groupby(
+            'parent_id').size().reset_index(name='num_replies')
+    else:
+        replies_count = pd.DataFrame(columns=['parent_id', 'num_replies'])
+
+    messages = messages_df.merge(
+        replies_count, how='left', left_on='id', right_on='parent_id')
+    messages['num_replies'] = messages['num_replies'].fillna(0)
+
+    def is_resolved(row):
+        text = str(row['text']).lower()  # ודא שזה מחרוזת
+        resolved_keywords = ['תודה', 'הסתדרתי', 'נפתר', 'works']
+        if any(k in text for k in resolved_keywords):
+            return True
+
+        # בדיקה מול slack_reports_df
+        # ודא ש-slack_reports_df לא ריק ושיש בו את העמודות הנדרשות
+        if not slack_reports_df.empty and all(col in slack_reports_df.columns for col in ['user_id', 'ts', 'text']):
+            user_reports = slack_reports_df[
+                (slack_reports_df['user_id'] == row['user_id']) &
+                (pd.to_datetime(
+                    slack_reports_df['ts'], unit='s').dt.date == row['date'])
+            ]
+            if not user_reports.empty and any(k in user_reports['text'].str.lower().str.cat(sep=' ') for k in ['הבעיה נפתרה', 'טופל', 'נפתרה']):
+                return True
+
+        # בדיקה מול github_issues_df
+        # ודא ש-github_issues_df לא ריק ושיש בו את העמודות הנדרשות
+        if not github_issues_df.empty and all(col in github_issues_df.columns for col in ['user_id', 'created_at', 'closed_at', 'state']):
+            issue_matches = github_issues_df[
+                (github_issues_df['user_id'] == row['user_id']) &
+                (pd.to_datetime(github_issues_df['created_at']).dt.date <= row['date']) &
+                ((pd.to_datetime(github_issues_df['closed_at'], errors='coerce').dt.date == row['date']) |
+                 (github_issues_df['state'] == 'closed'))
+            ]
+            if not issue_matches.empty:
+                return True
+        return False
+
+    def classify(row):
+        if row['num_replies'] == 0:
+            return 'open'
+        elif is_resolved(row):
+            return 'resolved'
+        return 'needs_attention'
+
+    # ודא ש-messages_df מכיל את העמודות הנדרשות לפני ה-apply
+    if not messages_df.empty and 'text' in messages_df.columns and 'user_id' in messages_df.columns and 'date' in messages_df.columns:
+        messages['status'] = messages.apply(classify, axis=1)
+    else:
+        # אם messages_df ריק או חסרות עמודות, צור עמודת 'status' ריקה
+        messages['status'] = None  # או 'unknown' או ערך אחר שמתאים לכם
+
+    messages['date'] = pd.to_datetime(messages['ts'], unit='s').dt.date
+    return messages[['id', 'user_id', 'text', 'num_replies', 'status', 'date']]
+
+
+def analyze_stuck_status(slack_df, replies_df, slack_reports_df, github_issues_df):
+    """מנתח את סטטוס המשתמשים ('תקועים', 'פעילים', 'נפתרו')."""
+    help_df = analyze_help_requests(slack_df)
+    replies_analysis = analyze_message_replies(
+        help_df, replies_df, slack_reports_df, github_issues_df)
+
+    # ודא ש-replies_analysis מכיל את העמודות הנדרשות
+    if replies_analysis.empty or not all(col in replies_analysis.columns for col in ['id', 'status']):
+        return pd.DataFrame(columns=['user_id', 'date', 'stuck_passive', 'stuck_active', 'resolved'])
+
+    merged = help_df[['id', 'user_id', 'date']].merge(
+        replies_analysis[['id', 'status']], on='id')
+
+    # ודא ש-merged לא ריק לפני pivot_table
+    if merged.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'stuck_passive', 'stuck_active', 'resolved'])
+
+    summary = merged.pivot_table(
+        index=['user_id', 'date'], columns='status', aggfunc='size', fill_value=0).reset_index()
+    return summary.rename(columns={
+        'open': 'stuck_passive',
+        'needs_attention': 'stuck_active',
+        'resolved': 'resolved'
+    })
+
+
+def analyze_completed_tasks(github_issues_df):
+    """מנתח משימות GitHub שהושלמו."""
+    if github_issues_df.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'completed_tasks'])
+
+    github_issues_df['date'] = pd.to_datetime(
+        github_issues_df['closed_at'], errors='coerce').dt.date
+    filtered = github_issues_df[(
+        github_issues_df['state'] == 'closed') & github_issues_df['date'].notna()]
+    return filtered.groupby(['user_id', 'date']).size().reset_index(name='completed_tasks')
+
+
+def analyze_open_tasks(github_issues_df):
+    """מנתח משימות GitHub פתוחות."""
+    if github_issues_df.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'open_tasks'])
+
+    github_issues_df['date'] = pd.to_datetime(
+        github_issues_df['created_at']).dt.date
+    open_issues = github_issues_df[github_issues_df['state'] == 'open']
+    return open_issues.groupby(['user_id', 'date']).size().reset_index(name='open_tasks')
+
+
+def analyze_commits(github_commits_df):
+    """מנתח קומיטים של GitHub."""
+    if github_commits_df.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'commits'])
+
+    github_commits_df['date'] = pd.to_datetime(
+        github_commits_df['timestamp']).dt.date
+    # ודא שהעמודה 'author' קיימת לפני ה-groupby
+    if 'author' not in github_commits_df.columns:
+        # אם 'author' לא קיימת, כבר שינית אותה ל-user_id ב-load_github_commits, או שהיא פשוט חסרה
+        # במקרה כזה נחזיר DataFrame ריק עם העמודות הצפויות
+        return pd.DataFrame(columns=['user_id', 'date', 'commits'])
+
+    return github_commits_df.groupby(['author', 'date']).size().reset_index(name='commits').rename(columns={'author': 'user_id'})
+
+
+def analyze_reviews(github_reviews_df):
+    """מנתח ביקורות קוד של GitHub."""
+    if github_reviews_df.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'reviews'])
+
+    github_reviews_df['date'] = pd.to_datetime(
+        github_reviews_df['created_at']).dt.date
+    return github_reviews_df.groupby(['user_id', 'date']).size().reset_index(name='reviews')
+
+# --- מיזוג תוצאות הניתוח לטבלה אחת (user_daily_summary) ---
+
+
+def build_user_daily_summary(slack_df, replies_df, slack_reports_df,
+                             github_commits_df, github_reviews_df, github_issues_df):
+    """בנאי סיכום יומי עבור כל משתמש על בסיס כל הנתונים המנותחים."""
+    dfs = [
+        analyze_total_messages(slack_df),
+        analyze_help_requests_count(slack_df),
+        analyze_stuck_status(slack_df, replies_df,
+                             slack_reports_df, github_issues_df),
+        analyze_completed_tasks(github_issues_df),
+        analyze_open_tasks(github_issues_df),
+        analyze_commits(github_commits_df),
+        analyze_reviews(github_reviews_df)
+    ]
+
+    # מיזוג כל ה-DataFrames לרפדא אחד גדול
+    user_summary_df = reduce(
+        lambda left, right: pd.merge(
+            left, right, on=['user_id', 'date'], how='outer'),
+        dfs
+    ).fillna(0)  # מילוי ערכים חסרים (NaN) באפס
+
+    # המרת עמודות מספריות ל-integer
+    for col in user_summary_df.columns:
+        if col not in ['user_id', 'date']:
+            user_summary_df[col] = user_summary_df[col].astype(int)
+
+    # שינוי שם העמודה 'date' ל-'day'
+    user_summary_df = user_summary_df.rename(columns={
+        'date': 'day'
+    })
+
+    return user_summary_df
+
+# --- יצירת טבלת project_status_daily ---
+
+
+def build_project_status_daily(github_prs_df, github_issues_df, all_users_df):
+    """בנאי סיכום יומי לסטטוס הפרויקט."""
+    # טיפול ב-DataFrame ריק של PRs
+    if github_prs_df.empty:
+        return pd.DataFrame([{
+            'day': datetime.now().date(),  # תאריך נוכחי
+            'open_prs': 0,
+            'stale_prs': 0,
+            'closed_prs': 0,
+            'critical_issues': 0,
+            'active_contributors': 0
+        }])
+
+    prs_df = github_prs_df.copy()
+    prs_df['day'] = pd.to_datetime(prs_df['created_at']).dt.date
+    prs_df['closed_day'] = pd.to_datetime(
+        prs_df['closed_at'], errors='coerce').dt.date
+
+    today = prs_df['day'].max()  # קבלת התאריך המקסימלי מנתוני ה-PRs הקיימים
+    if pd.isna(today):  # אם אין PRs בכלל, today יהיה NaT
+        today = datetime.now().date()  # השתמש בתאריך היום
+
+    stale_threshold = pd.Timestamp(today) - pd.Timedelta(days=3)
+    stale_prs = prs_df[(prs_df['state'] == 'open') & (
+        pd.to_datetime(prs_df['created_at']) < stale_threshold)]
+
+    open_prs_count = prs_df[(prs_df['state'] == 'open')
+                            & (prs_df['day'] == today)].shape[0]
+    closed_prs_count = prs_df[(prs_df['state'] == 'closed') & (
+        prs_df['closed_day'] == today)].shape[0]
+    stale_prs_count = stale_prs.shape[0]
+
+    critical_issues_count = 0
+    # ודא ש-github_issues_df לא ריק ושיש בו את העמודות הנדרשות
+    if not github_issues_df.empty and all(col in github_issues_df.columns for col in ['is_critical', 'state', 'created_at']):
+        critical_issues_count = github_issues_df[
+            # is_critical יכול להיות עמודה שחסרה
+            (github_issues_df.get('is_critical', False)) &
+            (github_issues_df['state'] == 'open') &
+            (pd.to_datetime(github_issues_df['created_at']).dt.date == today)
+        ].shape[0]
+
+    active_users = 0
+    # ודא ש-all_users_df לא ריק ושיש בו את העמודות הנדרשות
+    if not all_users_df.empty and all(col in all_users_df.columns for col in ['day', 'user_id']):
+        active_users = all_users_df[all_users_df['day']
+                                    == today]['user_id'].nunique()
+
+    return pd.DataFrame([{
+        'day': today,
+        'open_prs': open_prs_count,
+        'stale_prs': stale_prs_count,
+        'closed_prs': closed_prs_count,
+        'critical_issues': critical_issues_count,
+        'active_contributors': active_users
+    }])
+
+# --- יצירת טבלת alerts ---
+
+
+def build_alerts(user_summary_df):
+    """בנאי התראות על בסיס סיכום המשתמשים היומי."""
+    alerts = []
+    # ודא ש-user_summary_df לא ריק ושיש בו את העמודות הנדרשות
+    if user_summary_df.empty:
+        return pd.DataFrame(columns=['id', 'user_id', 'type', 'message', 'severity', 'created_at'])
+
+    for _, row in user_summary_df.iterrows():
+        # בדיקות עם .get() כדי למנוע KeyError אם עמודה חסרה מאיזושהי סיבה
+        if row.get('stuck_passive', 0) > 0:
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'stuck_passive',
+                'message': f"{row['user_id']} לא התקדם במשימה במשך זמן מה.",
+                'severity': 'medium',
+                'created_at': row['day']
+            })
+        if row.get('help_requests', 0) > 0 and row.get('resolved', 0) == 0:
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'unanswered_help',
+                'message': f"{row['user_id']} ביקש עזרה אך לא קיבל מענה.",
+                'severity': 'high',
+                'created_at': row['day']
+            })
+        # אם כלל העמודות הללו הן 0, אז יש חוסר פעילות
+        # הוספתי גם משימות
+        if all(row.get(col, 0) == 0 for col in ['total_messages', 'commits', 'reviews', 'completed_tasks', 'open_tasks']):
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'inactivity',
+                'message': f"{row['user_id']} לא היה פעיל כלל ביום {row['day']}.",
+                'severity': 'low',
+                'created_at': row['day']
+            })
+
+    return pd.DataFrame(alerts)
+
+# --- פונקציית שמירה למסד הנתונים ---
+
+
+def save_dataframe_to_db(df, table_name):
+    """שומר DataFrame לטבלה במסד הנתונים של Supabase."""
+    if df.empty:
+        print(f"⚠️ הטבלה {table_name} ריקה - לא נשמר כלום")
+        return
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # לוודא שכל העמודות ב-DataFrame הן בסוג נתונים תואם ל-PostgreSQL
+        # זה טיפול גנרי, ניתן להתאים אותו פרטנית אם יש בעיות עם סוגי נתונים ספציפיים
+        for column in df.columns:
+            # המרת תאריכים לפורמט ש-psycopg2 יודע להתמודד איתו
+            if pd.api.types.is_datetime64_any_dtype(df[column]):
+                df[column] = df[column].dt.to_pydatetime()
+            # המרת אובייקטים (כמו UUID) למחרוזת
+            elif pd.api.types.is_object_dtype(df[column]):
+                df[column] = df[column].astype(str)
+
+        for _, row in df.iterrows():
+            cols = ','.join(df.columns)
+            placeholders = ','.join(['%s'] * len(df.columns))
+            # שימוש ב-ON CONFLICT (id) DO UPDATE SET ... או DO NOTHING אם אין ID
+            # לצורך פשטות נשתמש ב-ON CONFLICT DO NOTHING - זה אומר שאם יש שורה עם אותו מפתח ראשי, היא לא תיכנס
+            # אם תרצה לעדכן שורות קיימות, תצטרך לפרט את העמודות לעדכון
+            sql = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+            cursor.execute(sql, tuple(row))
+
+        conn.commit()
+        print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
+
+    except Exception as e:
+        print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================
+# 🧪 MAIN DEMO - הרצת דמו מלאה
+# ============================
+if __name__ == "__main__":
+    print("🚀 מתחיל לנתח נתונים מ־Supabase...")
+
+    try:
+        # --- 1. טעינת כל ה-DataFrames הנדרשים ממסד הנתונים ---
+        slack_df = load_slack_messages()
+        print(f"📊 נטענו {len(slack_df)} הודעות מ-Slack")
+
+        if slack_df.empty:
+            print("⚠️ לא נמצאו הודעות ב-Slack - מסיים")
+            exit()
+
+        # replies_df מבוסס על slack_df
+        # parent_id מציין הודעות שהן תגובות
+        replies_df = slack_df[slack_df['parent_id'].notna()].copy()
+
+        # טוען דוחות סלאק, יחזיר DF עם עמודות גם אם הטבלה ריקה
+        slack_reports_df = load_slack_reports()
+
+        # טוען נתוני GitHub, יחזיר DF עם עמודות גם אם הטבלאות ריקות
+        github_commits_df = load_github_commits()
+        github_reviews_df = load_github_reviews()
+        github_issues_df = load_github_issues()
+        github_prs_df = load_github_prs()
+
+        print(f"📊 נטענו {len(github_issues_df)} גיליונות מ-GitHub")
+        print(f"📊 נטענו {len(github_commits_df)} קומיטים מ-GitHub")
+        print(f"📊 נטענו {len(github_reviews_df)} ביקורות מ-GitHub")
+        print(f"📊 נטענו {len(github_prs_df)} בקשות משיכה מ-GitHub")
+
+        # --- 2. ביצוע הניתוח ---
+        print("🔍 מבצע ניתוח נתונים...")
+        user_summary_df = build_user_daily_summary(
+            slack_df, replies_df, slack_reports_df,
+            github_commits_df, github_reviews_df, github_issues_df
+        )
+
+        # בונה סטטוס פרויקט יומי לאחר user_summary_df, מכיוון שהוא משתמש ב-active_contributors ממנו
+        project_status_daily_df = build_project_status_daily(
+            # user_summary_df עבור active_users
+            github_prs_df, github_issues_df, user_summary_df
+        )
+
+        alerts_df = build_alerts(user_summary_df)
+
+        # --- 3. הדפסת תוצאות (לצורך בדיקה ואימות) ---
+        print("\n📈 סיכום משתמשים יומי:")
+        print(tabulate(user_summary_df.head(), headers='keys', tablefmt='grid'))
+
+        print("\n📊 סיכום סטטוס פרויקט יומי:")
+        print(tabulate(project_status_daily_df.head(),
+                       headers='keys', tablefmt='grid'))
+
+        print(f"\n🚨 נמצאו {len(alerts_df)} התראות")
+
+        # --- 4. שמירה למסד הנתונים ---
+        print("\n💾 שומר נתונים למסד הנתונים...")
+        save_dataframe_to_db(user_summary_df, 'user_daily_summary')
+        save_dataframe_to_db(project_status_daily_df, 'project_status_daily')
+        save_dataframe_to_db(alerts_df, 'alerts')
+
+        print("✅ הנתונים נותחו ונשמרו לטבלאות Supabase בהצלחה")
+
+    except Exception as e:
+        print(f"❌ שגיאה כללית: {e}")
+        import traceback
+        traceback.print_exc()
