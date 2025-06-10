@@ -455,6 +455,34 @@ def save_dataframe_to_db(df, table_name):
         conn.close()
 
 
+def load_github_commits():
+    conn = get_db_connection()
+    df = pd.read_sql("SELECT * FROM github_commits_raw", conn)
+    conn.close()
+    return df
+
+
+def load_github_issues():
+    conn = get_db_connection()
+    df = pd.read_sql("SELECT * FROM github_issues_raw", conn)
+    conn.close()
+    return df
+
+
+def load_github_prs():
+    conn = get_db_connection()
+    df = pd.read_sql("SELECT * FROM github_prs_raw", conn)
+    conn.close()
+    return df
+
+
+def load_github_reviews():
+    conn = get_db_connection()
+    df = pd.read_sql("SELECT * FROM github_reviews_raw", conn)
+    conn.close()
+    return df
+
+
 # ============================
 # 🧪 MAIN DEMO - הרצת דמו מלאה
 # ============================

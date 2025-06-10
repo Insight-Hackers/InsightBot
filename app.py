@@ -1,3 +1,8 @@
+from flask import Flask, request, abort
+import pandas as pd
+from flask import request, abort
+import hashlib
+import hmac
 import os
 from flask import Flask, request
 import psycopg2
@@ -51,15 +56,15 @@ def slack_events():
             print("❌ שגיאה בשמירת הודעה:", e)
             import traceback
             traceback.print_exc()
-            
+
     elif event_type == "message" and event.get("subtype") == "message_deleted":
         try:
-           save_deleted_message_to_db(event, data)
-           print("🗑 הודעה שנמחקה נשמרה בהצלחה")
+            save_deleted_message_to_db(event, data)
+            print("🗑 הודעה שנמחקה נשמרה בהצלחה")
         except Exception as e:
-           print("❌ שגיאה בשמירת הודעת מחיקה:", e)
-           import traceback
-           traceback.print_exc()
+            print("❌ שגיאה בשמירת הודעת מחיקה:", e)
+            import traceback
+            traceback.print_exc()
 
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
@@ -75,6 +80,8 @@ def slack_events():
 # ========================
 # 💾 שמירה למסד
 # ========================
+
+
 def save_deleted_message_to_db(event, full_payload):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -148,7 +155,8 @@ def save_deleted_message_to_db(event, full_payload):
     finally:
         cur.close()
         conn.close()
-        
+
+
 def save_to_db(event, full_payload):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -236,6 +244,145 @@ def save_to_db(event, full_payload):
     finally:
         cur.close()
         conn.close()
+
+
+GITHUB_SECRET = b"YOUR_WEBHOOK_SECRET"  # מפתח סודי שתגדירי ב-GitHub ובקוד
+
+
+def verify_signature(payload_body, signature_header):
+    """בודק את חתימת ה־GitHub Webhook לפי ה־secret."""
+    if signature_header is None:
+        return False
+    sha_name, signature = signature_header.split('=')
+    if sha_name != 'sha256':
+        return False
+    mac = hmac.new(GITHUB_SECRET, msg=payload_body, digestmod=hashlib.sha256)
+    return hmac.compare_digest(mac.hexdigest(), signature)
+
+
+app = Flask(__name__)
+
+# טען את ה־Secret מהמשתנה סביבתי (ללא hardcoding)
+GITHUB_SECRET = os.getenv("GITHUB_SECRET")
+if GITHUB_SECRET is None:
+    raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
+GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-bytes
+
+# התחברות למסד
+
+
+def get_db_connection():
+    return psycopg2.connect(
+        dbname="postgres",
+        user="postgres.apphxbmngxlclxromyvt",
+        password="insightbot2025",
+        host="aws-0-eu-north-1.pooler.supabase.com",
+        port="6543"
+    )
+
+# שמירת DataFrame למסד עם עדכון (upsert)
+
+
+def save_dataframe_to_db(df, table_name):
+    if df.empty:
+        print(f"⚠️ הטבלה {table_name} ריקה - לא נשמר כלום")
+        return
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        for column in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[column]):
+                df[column] = df[column].dt.to_pydatetime()
+            elif pd.api.types.is_object_dtype(df[column]):
+                df[column] = df[column].astype(str)
+
+        for _, row in df.iterrows():
+            cols = ','.join(df.columns)
+            placeholders = ','.join(['%s'] * len(df.columns))
+            # DO UPDATE for all columns except PK 'id'
+            update_cols = ', '.join(
+                [f"{col}=EXCLUDED.{col}" for col in df.columns if col != 'id'])
+            sql = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders}) ON CONFLICT (id) DO UPDATE SET {update_cols}"
+            cursor.execute(sql, tuple(row))
+
+        conn.commit()
+        print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
+    except Exception as e:
+        print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+# אימות חתימה
+
+
+def verify_signature(payload_body, signature_header):
+    if signature_header is None:
+        return False
+    sha_name, signature = signature_header.split('=')
+    if sha_name != 'sha256':
+        return False
+    mac = hmac.new(GITHUB_SECRET, msg=payload_body, digestmod=hashlib.sha256)
+    return hmac.compare_digest(mac.hexdigest(), signature)
+
+# ה־endpoint לטיפול ב־GitHub Webhook
+
+
+@app.route("/github/webhook", methods=["POST"])
+def github_webhook():
+    signature = request.headers.get('X-Hub-Signature-256')
+    payload = request.data
+
+    if not verify_signature(payload, signature):
+        print("❌ חתימת webhook שגויה - דחה את הבקשה")
+        abort(400, "Invalid signature")
+
+    event_type = request.headers.get("X-GitHub-Event")
+    data = request.json
+
+    print(f"📢 GitHub event received: {event_type}")
+
+    # טיפול באירוע PR
+    if event_type == "pull_request":
+        pr = data.get("pull_request")
+        if pr:
+            df = pd.json_normalize([pr])
+            df.rename(columns={
+                'user.login': 'user_id',
+                'repository_url': 'repository',
+                'html_url': 'url'
+            }, inplace=True)
+            for col in ['created_at', 'closed_at', 'merged_at']:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+            save_dataframe_to_db(df, 'github_prs_raw')
+            print(f"💾 PR #{pr['number']} נשמר במסד")
+
+    # טיפול באירוע Issues
+    elif event_type == "issues":
+        issue = data.get("issue")
+        if issue:
+            df = pd.json_normalize([issue])
+            df.rename(columns={
+                'user.login': 'user_id',
+                'repository_url': 'repository',
+                'html_url': 'url'
+            }, inplace=True)
+            for col in ['created_at', 'closed_at']:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+            save_dataframe_to_db(df, 'github_issues_raw')
+            print(f"💾 Issue #{issue['number']} נשמר במסד")
+
+    # הוסיפי טיפול באירועים נוספים במידת הצורך
+
+    return "", 200
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
 
 # ========================
