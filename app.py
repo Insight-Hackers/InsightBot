@@ -26,15 +26,7 @@ def get_db_connection():
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
     data = request.json
-    print("📥 כל ה-event מ-Slack:")
-    print(json.dumps(data, indent=2, ensure_ascii=False))
-    
-    # בדיקה ספציפית לblocks
-    if 'event' in data and 'blocks' in data['event']:
-        print("✅ נמצא blocks!")
-        print(f"מספר blocks: {len(data['event']['blocks'])}")
-    else:
-        print("❌ אין blocks ב-event")
+    print("📥 התקבלה בקשה מ-Slack:", json.dumps(data, indent=2))
 
     if "challenge" in data:
         return data["challenge"], 200
@@ -48,12 +40,7 @@ def slack_events():
             print("✅ הודעה נשמרה במסד בהצלחה")
         except Exception as e:
             print("❌ שגיאה בשמירת הודעה:", e)
-    elif event_type == "message" and event.get("subtype") == "message_deleted":
-        try:
-            delete_from_db(event)
-            print("🗑 הודעה נמחקה מהמסד בהצלחה")
-        except Exception as e:
-            print("❌ שגיאה במחיקת הודעה מהמסד:", e)
+
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
             save_to_db(event, data)
@@ -63,54 +50,7 @@ def slack_events():
 
     return "", 200
 
-def extract_text_from_blocks(blocks):
-    texts = []
-    if not blocks:
-        return None
 
-    for block in blocks:
-        if block.get("type") == "section":
-            text_obj = block.get("text")
-            if text_obj and text_obj.get("type") in ["plain_text", "mrkdwn"]:
-                texts.append(text_obj.get("text", "").strip())
-
-    return "\n".join(texts) if texts else None
-
-
-def delete_from_db(event):
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    deleted_ts = event.get("deleted_ts")
-    channel_id = event.get("channel")
-    previous_message = event.get("previous_message", {})
-    user_id = previous_message.get("user")
-
-    if not deleted_ts:
-        print("⚠ לא נמצא deleted_ts באירוע")
-        return
-
-    cur.execute("""
-        INSERT INTO slack_messages_raw (
-            event_id, channel_id, user_id, text, ts,
-            raw, event_type, is_deleted
-        )
-        VALUES (%s, %s, %s, %s, to_timestamp(%s),
-                %s, %s, %s)
-    """, (
-        deleted_ts,
-        channel_id,
-        user_id,
-        "[DELETED]",
-        float(deleted_ts),
-        json.dumps(event),
-        "message_removed",  # 🟢 כמו שביקשת
-        True
-    ))
-
-    conn.commit()
-    cur.close()
-    conn.close()
 def save_to_db(event, full_payload):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -124,8 +64,7 @@ def save_to_db(event, full_payload):
     ts = float(event.get("ts") or event.get("event_ts"))
     event_id = event.get("ts") or event.get("event_ts")
     parent_event_id = None
-    text = event.get("text") or extract_text_from_blocks(event.get("blocks"))
-
+    text = event.get("text")
 
     if is_reaction:
         text = f":{event.get('reaction')}: by {event.get('user')}"
@@ -176,6 +115,6 @@ def save_to_db(event, full_payload):
     conn.close()
 
 
-if __name__== "__main__":  # ✅ נכוןשפפץ
+if __name__ == "__main__":  # ✅ נכוןשפפץ
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
