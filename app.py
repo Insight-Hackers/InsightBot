@@ -81,19 +81,12 @@ def delete_from_db(event):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    original_event_id = event["deleted_ts"] # זה יהיה ה-parent_event_id
-    new_event_id = str(uuid.uuid4()) # יצירת event ID ייחודי חדש
-
-    # הכנסת שורה חדשה במקום מחיקה
-    cur.execute(
-        "INSERT INTO slack_messages_raw (event_id, parent_event_id, event_type) VALUES (%s, %s, %s)",
-        (new_event_id, original_event_id, 'MESSAGE DELETED')
-    )
+    deleted_ts = event["deleted_ts"]
+    cur.execute("DELETE FROM slack_messages_raw WHERE event_id = %s", (deleted_ts,))
 
     conn.commit()
     cur.close()
     conn.close()
-
 
 def save_to_db(event, full_payload):
     conn = get_db_connection()
