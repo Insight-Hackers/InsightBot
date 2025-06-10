@@ -76,7 +76,6 @@ def save_dataframe_to_db(df, table_name):
         for _, row in df.iterrows():
             cols = ','.join(df.columns)
             placeholders = ','.join(['%s'] * len(df.columns))
-            # הנחה שהטבלאות כוללות PRIMARY KEY על העמודה 'id'
             update_cols = ', '.join(
                 [f"{col}=EXCLUDED.{col}" for col in df.columns if col != 'id'])
             sql = f"""
@@ -94,6 +93,22 @@ def save_dataframe_to_db(df, table_name):
     finally:
         cursor.close()
         conn.close()
+
+# ========================
+# נקודת קצה ל־Slack Events
+# ========================
+
+
+@app.route("/slack/events", methods=["POST"])
+def slack_events():
+    data = request.json
+    print("📥 Slack event received:")
+    print(json.dumps(data, indent=2))
+
+    # כאן יש להוסיף את הלוגיקה לשמירת האירועים למסד כפי שהיית עושה בקוד שלך
+    # לדוגמה, שמירת הודעות, תגובות וכו' לטבלה slack_messages_raw
+
+    return "", 200
 
 # ========================
 # Endpoint לטיפול ב־GitHub webhook
@@ -120,7 +135,6 @@ def github_webhook():
         if pr:
             df = pd.json_normalize([pr])
 
-            # וודא שיש עמודה 'id' - תיצור מאנשהו אם חסרה
             if 'id' not in df.columns:
                 if 'number' in df.columns:
                     df['id'] = df['number'].astype(str)
