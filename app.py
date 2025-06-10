@@ -18,7 +18,7 @@ def get_db_connection():
             user="postgres.apphxbmngxlclxromyvt",
             password="insightbot2025",
             host="aws-0-eu-north-1.pooler.supabase.com",
-            port="5432"
+            port="6543"
         )
         print("🟢 התחברות למסד הצליחה")
         return conn
