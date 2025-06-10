@@ -12,7 +12,7 @@ app = Flask(__name__)
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
-GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-bytes
+GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 
 def get_db_connection():
