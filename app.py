@@ -12,7 +12,7 @@ def get_db_connection():
         conn = psycopg2.connect(
             dbname="postgres",
             user="postgres.apphxbmngxlclxromyvt",
-            password="עדילוסטיג2025",  # ✏️ עדכני אם צריך
+            password="עדילוסטיג2025",  # ✏ עדכני אם צריך
             host="aws-0-eu-north-1.pooler.supabase.com",
             port="6543"
         )
@@ -57,6 +57,7 @@ def save_to_db(event, full_payload):
 
     event_type = event.get("type")
     is_reaction = event_type in ["reaction_added", "reaction_removed"]
+
     if event_type == "message" and event.get("thread_ts") and event.get("thread_ts") != event.get("ts"):
         event_type = "concatenation"
 
@@ -69,11 +70,30 @@ def save_to_db(event, full_payload):
         text = f":{event.get('reaction')}: by {event.get('user')}"
         parent_event_id = event["item"]["ts"]
 
+    # 🧠 ניתוח האם ההודעה היא רשימה
+    is_list = False
+    list_items = []
+    num_list_items = 0
+
+    if text:
+        lines = text.splitlines()
+        for line in lines:
+            line = line.strip()
+            if line.startswith(("* ", "- ", "• ")):
+                is_list = True
+                list_items.append(line[2:].strip())
+
+        num_list_items = len(list_items) if is_list else 0
+
+    # 📝 הכנסת הנתונים לטבלה
     cur.execute("""
         INSERT INTO slack_messages_raw (
-            event_id, channel_id, user_id, text, ts, thread_ts, raw, event_type, parent_event_id
+            event_id, channel_id, user_id, text, ts, thread_ts,
+            raw, event_type, parent_event_id,
+            is_list, list_items, num_list_items
         )
-        VALUES (%s, %s, %s, %s, to_timestamp(%s), %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, to_timestamp(%s), %s,
+                %s, %s, %s, %s, %s, %s)
         ON CONFLICT (event_id) DO NOTHING
     """, (
         event_id,
@@ -84,7 +104,10 @@ def save_to_db(event, full_payload):
         event.get("thread_ts") if not is_reaction else None,
         json.dumps(full_payload),
         event_type,
-        parent_event_id
+        parent_event_id,
+        is_list,
+        json.dumps(list_items) if list_items else None,
+        num_list_items
     ))
 
     conn.commit()
@@ -92,6 +115,6 @@ def save_to_db(event, full_payload):
     conn.close()
 
 
-if __name__ == "__main__":
+if __name__ == "main":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
