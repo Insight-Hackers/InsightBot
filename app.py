@@ -61,7 +61,6 @@ def save_dataframe_to_db(df, table_name):
             if pd.api.types.is_datetime64_any_dtype(df[column]):
                 df[column] = df[column].dt.to_pydatetime()
             elif pd.api.types.is_object_dtype(df[column]):
-                # המרה ל-str רק אם הערך אינו None
                 df[column] = df[column].apply(
                     lambda x: str(x) if x is not None else None)
 
@@ -111,7 +110,6 @@ def slack_events():
     event = data.get("event", {})
     df = pd.json_normalize([event])
 
-    # השתמש ב-client_msg_id או ts כמפתח ראשי id
     if 'client_msg_id' in df.columns:
         df['id'] = df['client_msg_id'].astype(str)
     elif 'ts' in df.columns:
@@ -128,10 +126,8 @@ def slack_events():
     if 'ts' in df.columns:
         df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
 
-    # המרת json הגולמי של האירוע לעמודת raw
     df['raw'] = df.apply(lambda row: json.dumps(event), axis=1)
 
-    # טיפול ב-list_items - מזהה פריטים ברשימה
     def extract_list_items(text):
         if not isinstance(text, str):
             return None
@@ -172,7 +168,7 @@ def github_webhook():
         print("✅ Received ping event from GitHub")
         return "", 200
 
-    if event_type == "pull_request":
+    elif event_type == "pull_request":
         pr = data.get("pull_request")
         if pr:
             df = pd.json_normalize([pr])
@@ -190,7 +186,6 @@ def github_webhook():
                 'html_url': 'url'
             }, inplace=True)
 
-            # הסרת עמודות כפולות
             df = df.loc[:, ~df.columns.duplicated()]
 
             for col in ['created_at', 'closed_at', 'merged_at']:
@@ -198,7 +193,6 @@ def github_webhook():
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_prs_raw')
-
             save_dataframe_to_db(df_filtered, 'github_prs_raw')
             print(f"💾 PR #{pr.get('number', '')} נשמר במסד")
 
@@ -220,7 +214,6 @@ def github_webhook():
                 'html_url': 'url'
             }, inplace=True)
 
-            # הסרת עמודות כפולות
             df = df.loc[:, ~df.columns.duplicated()]
 
             for col in ['created_at', 'closed_at']:
@@ -228,9 +221,63 @@ def github_webhook():
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_issues_raw')
-
             save_dataframe_to_db(df_filtered, 'github_issues_raw')
             print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
+
+    elif event_type == "push":
+        commits = data.get("commits", [])
+        repository = data.get("repository", {})
+        if commits:
+            df = pd.json_normalize(commits)
+
+            df.rename(columns={
+                'id': 'sha',
+                'author.name': 'author',
+                'message': 'message',
+                'timestamp': 'timestamp'
+            }, inplace=True)
+
+            df['repository'] = repository.get('full_name', '')
+            df['url'] = None
+
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(
+                    df['timestamp'], errors='coerce')
+
+            df_filtered = filter_columns_for_table(df, 'github_commits_raw')
+            save_dataframe_to_db(df_filtered, 'github_commits_raw')
+            print(f"💾 נשמרו {len(df_filtered)} קומיטים במסד")
+
+    elif event_type == "pull_request_review":
+        review = data.get("review")
+        pr = data.get("pull_request", {})
+        if review:
+            df = pd.json_normalize([review])
+            pr_id = pr.get('id', None)
+            df['pull_request_id'] = str(pr_id) if pr_id is not None else None
+
+            if 'id' not in df.columns:
+                df['id'] = df['id'].astype(str) if 'id' in df.columns else None
+
+            df.rename(columns={
+                'user.login': 'user_id',
+                'state': 'state',
+                'body': 'body',
+                'created_at': 'created_at',
+                'html_url': 'url'
+            }, inplace=True)
+
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            if 'created_at' in df.columns:
+                df['created_at'] = pd.to_datetime(
+                    df['created_at'], errors='coerce')
+
+            df_filtered = filter_columns_for_table(df, 'github_reviews_raw')
+            save_dataframe_to_db(df_filtered, 'github_reviews_raw')
+            print(f"💾 Review #{review.get('id', '')} נשמר במסד")
 
     else:
         print(f"⚠️ אירוע לא מטופל: {event_type}")
