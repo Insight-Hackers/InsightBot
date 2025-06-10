@@ -36,7 +36,7 @@ def get_db_connection():
         raise
 
 # ========================
-# אימות חתימה
+# אימות חתימה GitHub
 # ========================
 
 
@@ -105,8 +105,34 @@ def slack_events():
     print("📥 Slack event received:")
     print(json.dumps(data, indent=2))
 
-    # כאן יש להוסיף את הלוגיקה לשמירת האירועים למסד כפי שהיית עושה בקוד שלך
-    # לדוגמה, שמירת הודעות, תגובות וכו' לטבלה slack_messages_raw
+    # נניח שאת רוצה לשמור רק הודעות רגילות (message type, ללא subtype)
+    event = data.get("event", {})
+    event_type = event.get("type")
+
+    if event_type == "message" and "subtype" not in event:
+        # ניצור DataFrame לשמירה
+        df = pd.json_normalize([event])
+
+        # וודא שיש עמודה 'id' (משתמש ב-'ts')
+        if 'id' not in df.columns:
+            if 'ts' in df.columns:
+                df['id'] = df['ts'].astype(str)
+            else:
+                df['id'] = pd.util.hash_pandas_object(df).astype(str)
+
+        # שינויים בשמות עמודות לפי הטבלה שלך אם צריך
+        df.rename(columns={
+            'user': 'user_id',
+            'channel': 'channel_id',
+        }, inplace=True)
+
+        # המרת ts למספר או מחרוזת (תלוי איך שמורה בטבלה)
+        if 'ts' in df.columns:
+            df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
+
+        # שמירת האירוע לטבלה slack_messages_raw
+        save_dataframe_to_db(df, 'slack_messages_raw')
+        print("✅ Slack message נשמר למסד")
 
     return "", 200
 
@@ -129,7 +155,6 @@ def github_webhook():
 
     print(f"📢 GitHub event received: {event_type}")
 
-    # טיפול באירוע PR
     if event_type == "pull_request":
         pr = data.get("pull_request")
         if pr:
@@ -152,13 +177,9 @@ def github_webhook():
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
-            if df.empty:
-                print("⚠️ DataFrame PR ריק, לא שומר")
-            else:
-                save_dataframe_to_db(df, 'github_prs_raw')
-                print(f"💾 PR #{pr.get('number', '')} נשמר במסד")
+            save_dataframe_to_db(df, 'github_prs_raw')
+            print(f"💾 PR #{pr.get('number', '')} נשמר במסד")
 
-    # טיפול באירוע Issues
     elif event_type == "issues":
         issue = data.get("issue")
         if issue:
@@ -181,11 +202,8 @@ def github_webhook():
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
-            if df.empty:
-                print("⚠️ DataFrame Issue ריק, לא שומר")
-            else:
-                save_dataframe_to_db(df, 'github_issues_raw')
-                print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
+            save_dataframe_to_db(df, 'github_issues_raw')
+            print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
 
     # כאן אפשר להוסיף טיפול באירועים נוספים במידת הצורך
 
