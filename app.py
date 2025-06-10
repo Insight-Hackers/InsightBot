@@ -48,12 +48,12 @@ def slack_events():
             print("✅ הודעה נשמרה במסד בהצלחה")
         except Exception as e:
             print("❌ שגיאה בשמירת הודעה:", e)
-    elif event_type == "message" and event.get("subtype") == "message_deleted":
-        try:
-            delete_from_db(event)
-            print("🗑 הודעה נמחקה מהמסד בהצלחה")
-        except Exception as e:
-            print("❌ שגיאה במחיקת הודעה מהמסד:", e)
+    # elif event_type == "message" and event.get("subtype") == "message_deleted":
+    #     try:
+    #         delete_from_db(event)
+    #         print("🗑 הודעה נמחקה מהמסד בהצלחה")
+    #     except Exception as e:
+    #         print("❌ שגיאה במחיקת הודעה מהמסד:", e)
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
             save_to_db(event, data)
