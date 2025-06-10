@@ -15,9 +15,9 @@ def get_db_connection():
     try:
         conn = psycopg2.connect(
             dbname="postgres",
-            user="postgres",
+            user="postgres.apphxbmngxlclxromyvt",
             password="insightbot2025",
-            host="db.apphxbmngxlclxromyvt.supabase.co",
+            host="aws-0-eu-north-1.pooler.supabase.com",
             port="5432"
         )
         print("🟢 התחברות למסד הצליחה")
