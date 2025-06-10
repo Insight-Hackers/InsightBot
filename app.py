@@ -59,7 +59,8 @@ def save_dataframe_to_db(df, table_name):
     try:
         for column in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[column]):
-                df[column] = df[column].dt.to_pydatetime()
+                # המרה עם טיפול ב-NaT
+                df[column] = df[column].where(df[column].notna(), None)
             elif pd.api.types.is_object_dtype(df[column]):
                 df[column] = df[column].apply(
                     lambda x: str(x) if x is not None else None)
