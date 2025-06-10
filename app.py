@@ -51,6 +51,15 @@ def slack_events():
             print("❌ שגיאה בשמירת הודעה:", e)
             import traceback
             traceback.print_exc()
+            
+    elif event_type == "message" and event.get("subtype") == "message_deleted":
+        try:
+           save_deleted_message_to_db(event, data)
+           print("🗑 הודעה שנמחקה נשמרה בהצלחה")
+        except Exception as e:
+           print("❌ שגיאה בשמירת הודעת מחיקה:", e)
+           import traceback
+           traceback.print_exc()
 
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
@@ -66,8 +75,80 @@ def slack_events():
 # ========================
 # 💾 שמירה למסד
 # ========================
+def save_deleted_message_to_db(event, full_payload):
+    conn = get_db_connection()
+    cur = conn.cursor()
 
+    # מזהה האירוע החדש
+    event_id = event.get("event_ts")  # זה ה-id החדש לאירוע המחיקה
+    ts = float(event_id) if event_id else None
 
+    # פרטי ההודעה המקורית שנמחקה
+    previous_message = event.get("previous_message", {})
+    parent_id = previous_message.get("ts")
+    user_id = previous_message.get("user")
+    channel_id = event.get("channel")
+    text = "[message deleted]"
+    event_type = "deleted"
+
+    is_list = False
+    list_items = []
+    num_list_items = 0
+
+    print("🗑 מחיקת הודעה:")
+    print("🔹 id (event):", event_id)
+    print("🔹 parent_id (ts של ההודעה שנמחקה):", parent_id)
+
+    if not event_id or not parent_id:
+        print("⚠ event_id או parent_id חסרים – מדלג")
+        cur.close()
+        conn.close()
+        return
+
+    # בדיקה אם האירוע כבר נשמר
+    cur.execute("SELECT 1 FROM slack_messages_raw WHERE id = %s", (event_id,))
+    if cur.fetchone():
+        print("⛔ אירוע מחיקה כבר קיים – לא מכניס שוב")
+        cur.close()
+        conn.close()
+        return
+
+    try:
+        cur.execute("""
+            INSERT INTO slack_messages_raw (
+                id, channel_id, user_id, text, ts, thread_ts,
+                raw, event_type, parent_id,
+                is_list, list_items, num_list_items
+            )
+            VALUES (%s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+        """, (
+            event_id,
+            channel_id,
+            user_id,
+            text,
+            ts,
+            None,
+            json.dumps(full_payload),
+            event_type,
+            parent_id,
+            is_list,
+            None,
+            num_list_items
+        ))
+
+        conn.commit()
+        print("✅ אירוע מחיקה נשמר עם commit")
+    except Exception as e:
+        print("❌ שגיאה בשמירת אירוע מחיקה:", e)
+        import traceback
+        traceback.print_exc()
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+        
 def save_to_db(event, full_payload):
     conn = get_db_connection()
     cur = conn.cursor()
