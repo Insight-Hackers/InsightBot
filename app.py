@@ -15,10 +15,6 @@ if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-bytes
 
-# ========================
-# 🔌 התחברות למסד הנתונים
-# ========================
-
 
 def get_db_connection():
     try:
@@ -35,10 +31,6 @@ def get_db_connection():
         print("❌ שגיאה בהתחברות למסד:", e)
         raise
 
-# ========================
-# אימות חתימה GitHub
-# ========================
-
 
 def verify_signature(payload_body, signature_header):
     if signature_header is None:
@@ -53,10 +45,6 @@ def verify_signature(payload_body, signature_header):
         return False
     mac = hmac.new(GITHUB_SECRET, msg=payload_body, digestmod=hashlib.sha256)
     return hmac.compare_digest(mac.hexdigest(), signature)
-
-# ========================
-# שמירת DataFrame למסד עם UPSERT
-# ========================
 
 
 def save_dataframe_to_db(df, table_name):
@@ -94,9 +82,20 @@ def save_dataframe_to_db(df, table_name):
         cursor.close()
         conn.close()
 
-# ========================
-# נקודת קצה ל־Slack Events
-# ========================
+
+def filter_columns_for_table(df, table_name):
+    table_columns = {
+        'slack_messages_raw': ['id', 'channel_id', 'user_id', 'text', 'ts', 'thread_ts', 'raw', 'event_type', 'parent_id', 'is_list', 'list_items', 'num_list_items'],
+        'alerts': ['id', 'user_id', 'type', 'message', 'severity', 'created_at'],
+        'github_commits_raw': ['sha', 'author', 'message', 'timestamp', 'repository', 'url'],
+        'github_issues_raw': ['id', 'user_id', 'title', 'body', 'state', 'created_at', 'closed_at', 'repository', 'url', 'is_critical'],
+        'github_prs_raw': ['id', 'user_id', 'title', 'state', 'created_at', 'closed_at', 'merged_at', 'repository', 'url'],
+        'github_reviews_raw': ['id', 'pull_request_id', 'user_id', 'state', 'body', 'created_at', 'url'],
+        'slack_reports_raw': ['id', 'user_id', 'text', 'ts', 'channel_id', 'report_type', 'status'],
+        'user_daily_summary': ['user_id', 'day', 'total_messages', 'help_requests', 'stuck_passive', 'stuck_active', 'resolved', 'completed_tasks', 'open_tasks', 'commits', 'reviews']
+    }
+    cols_to_keep = table_columns.get(table_name, [])
+    return df.loc[:, df.columns.intersection(cols_to_keep)]
 
 
 @app.route("/slack/events", methods=["POST"])
@@ -117,24 +116,18 @@ def slack_events():
     df.rename(columns={
         'user': 'user_id',
         'channel': 'channel_id',
+        'type': 'event_type'
     }, inplace=True)
-
-    # טיפול ב-`type`
-    if 'type' in df.columns:
-        df = df.rename(columns={'type': 'event_type'})  # או להסיר אם אין בטבלה
 
     if 'ts' in df.columns:
         df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
 
-    save_dataframe_to_db(df, 'slack_messages_raw')
+    df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+
+    save_dataframe_to_db(df_filtered, 'slack_messages_raw')
     print("✅ Slack message נשמר למסד")
 
     return "", 200
-
-
-# ========================
-# Endpoint לטיפול ב־GitHub webhook
-# ========================
 
 
 @app.route("/github/webhook", methods=["POST"])
@@ -173,7 +166,9 @@ def github_webhook():
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
-            save_dataframe_to_db(df, 'github_prs_raw')
+            df_filtered = filter_columns_for_table(df, 'github_prs_raw')
+
+            save_dataframe_to_db(df_filtered, 'github_prs_raw')
             print(f"💾 PR #{pr.get('number', '')} נשמר במסד")
 
     elif event_type == "issues":
@@ -198,16 +193,14 @@ def github_webhook():
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
-            save_dataframe_to_db(df, 'github_issues_raw')
+            df_filtered = filter_columns_for_table(df, 'github_issues_raw')
+
+            save_dataframe_to_db(df_filtered, 'github_issues_raw')
             print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
 
-    # כאן אפשר להוסיף טיפול באירועים נוספים במידת הצורך
+    # הוסף טיפול לאירועים נוספים לפי הצורך
 
     return "", 200
-
-# ========================
-# הפעלת השרת
-# ========================
 
 
 if __name__ == "__main__":
