@@ -12,7 +12,7 @@ def get_db_connection():
         conn = psycopg2.connect(
             dbname="postgres",
             user="postgres.apphxbmngxlclxromyvt",
-            password="עדילוסטיג2025",  # ✏ עדכני אם צריך
+            password="insightbot2025",  # ✏ עדכני אם צריך
             host="aws-0-eu-north-1.pooler.supabase.com",
             port="6543"
         )
