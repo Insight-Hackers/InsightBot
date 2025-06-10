@@ -12,7 +12,7 @@ def get_db_connection():
         conn = psycopg2.connect(
             dbname="postgres",
             user="postgres.apphxbmngxlclxromyvt",
-            password="insightbot2025",
+            password="insightbot2025",  # ✏ עדכני אם צריך
             host="aws-0-eu-north-1.pooler.supabase.com",
             port="5432"
         )
@@ -48,7 +48,12 @@ def slack_events():
             print("✅ הודעה נשמרה במסד בהצלחה")
         except Exception as e:
             print("❌ שגיאה בשמירת הודעה:", e)
-
+    elif event_type == "message" and event.get("subtype") == "message_deleted":
+        try:
+            delete_from_db(event)
+            print("🗑 הודעה נמחקה מהמסד בהצלחה")
+        except Exception as e:
+            print("❌ שגיאה במחיקת הודעה מהמסד:", e)
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
             save_to_db(event, data)
@@ -58,108 +63,30 @@ def slack_events():
 
     return "", 200
 
-
 def extract_text_from_blocks(blocks):
-    """פונקציה משופרת לחילוץ טקסט מ-blocks כולל רשימות"""
+    texts = []
     if not blocks:
         return None
-    
-    all_text = []
-    
+
     for block in blocks:
-        block_type = block.get("type")
-        
-        if block_type == "section":
-            # טקסט רגיל
+        if block.get("type") == "section":
             text_obj = block.get("text")
             if text_obj and text_obj.get("type") in ["plain_text", "mrkdwn"]:
-                all_text.append(text_obj.get("text", "").strip())
-        
-        elif block_type == "rich_text":
-            # טיפול ב-rich_text blocks (כאן נמצאות הרשימות!)
-            rich_text = extract_rich_text_blocks(block)
-            if rich_text:
-                all_text.append(rich_text)
-    
-    return "\n".join(all_text) if all_text else None
+                texts.append(text_obj.get("text", "").strip())
+
+    return "\n".join(texts) if texts else None
 
 
-def extract_rich_text_blocks(rich_block):
-    """חילוץ טקסט מ-rich_text blocks"""
-    text_parts = []
-    
-    for element in rich_block.get('elements', []):
-        element_type = element.get('type')
-        
-        if element_type == 'rich_text_section':
-            # טקסט רגיל
-            section_text = extract_rich_text_section(element)
-            if section_text:
-                text_parts.append(section_text)
-        
-        elif element_type == 'rich_text_list':
-            # רשימות - זה החשוב!
-            list_text = extract_rich_text_list(element)
-            if list_text:
-                text_parts.append(list_text)
-    
-    return '\n'.join(text_parts)
+def delete_from_db(event):
+    conn = get_db_connection()
+    cur = conn.cursor()
 
+    deleted_ts = event["deleted_ts"]
+    cur.execute("DELETE FROM slack_messages_raw WHERE event_id = %s", (deleted_ts,))
 
-def extract_rich_text_section(section):
-    """חילוץ טקסט מ-rich_text_section"""
-    text_parts = []
-    for element in section.get('elements', []):
-        if element.get('type') == 'text':
-            text_parts.append(element.get('text', ''))
-        elif element.get('type') == 'link':
-            url = element.get('url', '')
-            text = element.get('text', url)
-            text_parts.append(f"{text} ({url})")
-    
-    return ''.join(text_parts)
-
-
-def extract_rich_text_list(list_element):
-    """חילוץ רשימות מ-rich_text_list - הפונקציה החשובה!"""
-    list_items = []
-    style = list_element.get('style', 'bullet')
-    
-    for i, item in enumerate(list_element.get('elements', []), 1):
-        if item.get('type') == 'rich_text_section':
-            item_text = extract_rich_text_section(item)
-            if item_text:
-                if style == 'ordered':
-                    list_items.append(f"{i}. {item_text}")
-                else:
-                    list_items.append(f"• {item_text}")
-    
-    return '\n'.join(list_items)
-
-
-def detect_list_from_text(text):
-    """זיהוי רשימות מטקסט - משופר"""
-    if not text:
-        return False, [], 0
-    
-    list_items = []
-    lines = text.splitlines()
-    
-    for line in lines:
-        line = line.strip()
-        # זיהוי סוגי רשימות שונים
-        if line.startswith(("* ", "- ", "• ", "◦ ", "▪ ")):
-            list_items.append(line[2:].strip())
-        elif line.startswith(("1. ", "2. ", "3. ", "4. ", "5. ", "6. ", "7. ", "8. ", "9. ")):
-            # רשימה ממוספרת
-            list_items.append(line[3:].strip())
-        elif ". " in line[:5] and line[:line.index(". ")].isdigit():
-            # רשימה ממוספרת גמישה יותר
-            list_items.append(line[line.index(". ") + 2:].strip())
-    
-    is_list = len(list_items) > 0
-    return is_list, list_items, len(list_items)
-
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def save_to_db(event, full_payload):
     conn = get_db_connection()
@@ -174,28 +101,27 @@ def save_to_db(event, full_payload):
     ts = float(event.get("ts") or event.get("event_ts"))
     event_id = event.get("ts") or event.get("event_ts")
     parent_event_id = None
-    
-    # שילוב טקסט רגיל + טקסט מ-blocks
-    regular_text = event.get("text", "")
-    blocks_text = extract_text_from_blocks(event.get("blocks"))
-    
-    # שילוב הטקסטים
-    if regular_text and blocks_text:
-        text = f"{regular_text}\n{blocks_text}"
-    elif blocks_text:
-        text = blocks_text
-    else:
-        text = regular_text
+    text = event.get("text") or extract_text_from_blocks(event.get("blocks"))
+
 
     if is_reaction:
         text = f":{event.get('reaction')}: by {event.get('user')}"
         parent_event_id = event["item"]["ts"]
 
-    # 🧠 ניתוח רשימות משופר
-    is_list, list_items, num_list_items = detect_list_from_text(text)
+    # 🧠 ניתוח האם ההודעה היא רשימה
+    is_list = False
+    list_items = []
+    num_list_items = 0
 
-    print(f"📝 טקסט מלא: {text}")
-    print(f"📋 זוהתה רשימה: {is_list}, פריטים: {num_list_items}")
+    if text:
+        lines = text.splitlines()
+        for line in lines:
+            line = line.strip()
+            if line.startswith(("* ", "- ", "• ")):
+                is_list = True
+                list_items.append(line[2:].strip())
+
+        num_list_items = len(list_items) if is_list else 0
 
     # 📝 הכנסת הנתונים לטבלה
     cur.execute("""
@@ -227,6 +153,6 @@ def save_to_db(event, full_payload):
     conn.close()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # ✅ נכוןשפפץ
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
