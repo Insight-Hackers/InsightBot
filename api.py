@@ -5,7 +5,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-print(":white_check_mark: הקובץ app.py התחיל לרוץ")
+print(":white_check_mark: The app.py file started running")
 
 def get_db_connection():
     try:
@@ -16,10 +16,10 @@ def get_db_connection():
             host="aws-0-eu-north-1.pooler.supabase.com",
             port="5432"
         )
-        print(":large_green_circle: התחברות למסד הצליחה")
+        print(":large_green_circle: The connection to the database was successful")
         return conn
     except Exception as e:
-        print(":x: שגיאה בהתחברות למסד:", e)
+        print(":x: Error connecting to the database:", e)
         raise
 
 @app.route('/')
@@ -33,7 +33,7 @@ def stats():
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
     data = request.json
-    print(":inbox_tray: התקבלה בקשה מ-Slack:", json.dumps(data, indent=2))
+    print(":inbox_tray: Received a request from Slack:", json.dumps(data, indent=2))
 
     if "challenge" in data:
         return data["challenge"], 200
@@ -42,9 +42,9 @@ def slack_events():
     if event.get("type") == "message" and "subtype" not in event:
         try:
             save_to_db(event, data)
-            print(":white_check_mark: הודעה נשמרה במסד בהצלחה")
+            print(":white_check_mark: Message saved to database successfully")
         except Exception as e:
-            print(":x: שגיאה בשמירת הודעה:", e)
+            print(":x: Error saving message:", e)
 
     return "", 200
 
@@ -102,5 +102,5 @@ def slack_messages_raw():
     return jsonify(data)
 
 if __name__ == "__main__":
-    print(":rocket: מריצה את השרת ב־http://localhost:5000")
+    print(":rocket: Running the server in http://localhost:5000")
     app.run(port=5000, debug=True)
