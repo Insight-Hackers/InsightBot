@@ -27,95 +27,6 @@ def get_db_connection():
         raise
 
 # ========================
-# 🌐 נקודת קצה ל־Slack Interact
-# ========================
-
-@app.route('/slack/interact', methods=['POST'])
-def handle_interactive():
-    payload = json.loads(request.form['payload'])
-
-    event_type = payload.get("type")
-    user_id = payload.get("user", {}).get("id")
-    channel_id = None
-    ts = None
-    text = None
-    parent_ts = None
-
-    # הגדרת event בסיסי
-    event = {
-        "type": "interaction",  # שם כללי ל־event_type
-        "user": user_id
-    }
-
-    # ⚙ סוגים שונים של אינטראקציות
-    if event_type == "block_actions":
-        action = payload["actions"][0]
-        action_id = action["action_id"]
-        value = action.get("value")
-        channel_id = payload.get("channel", {}).get("id")
-        ts = payload.get("message", {}).get("ts")
-        text = f"[block action] {action_id} = {value}"
-        parent_ts = ts
-
-    elif event_type == "view_submission":
-        view = payload["view"]
-        callback_id = view.get("callback_id")
-        state_values = view.get("state", {}).get("values", {})
-        ts = payload.get("container", {}).get("message_ts") or view.get("id")
-        channel_id = payload.get("view", {}).get("private_metadata")  # אפשר להעביר את channel דרך metadata
-        text = f"[view submission] {callback_id} with values: {json.dumps(state_values)}"
-
-    elif event_type == "view_closed":
-        callback_id = payload.get("view", {}).get("callback_id")
-        ts = payload.get("view", {}).get("id")
-        channel_id = payload.get("view", {}).get("private_metadata")
-        text = f"[view closed] {callback_id}"
-
-    elif event_type == "message_action":
-        action_ts = payload["message"].get("ts")
-        channel_id = payload.get("channel", {}).get("id")
-        message_text = payload["message"].get("text")
-        ts = action_ts
-        parent_ts = action_ts
-        text = f"[message action] on: {message_text}"
-
-    else:
-        print("⚠ סוג אינטראקציה לא ידוע:", event_type)
-        return '', 200
-
-    # מילוי שדות באובייקט ה־event שנשלח ל־save_to_db
-    event["channel"] = channel_id
-    event["ts"] = ts
-    event["text"] = text
-    if parent_ts:
-        event["thread_ts"] = parent_ts  # כדי שיתועד כהמשך הודעה
-
-    try:
-        save_to_db(event, payload)
-        print("✅ אינטראקציה נשמרה במסד בהצלחה")
-    except Exception as e:
-        print("❌ שגיאה בשמירת אינטראקציה:", e)
-        import traceback
-        traceback.print_exc()
-
-    return '', 200
-
-
-def save_assignment_to_db(task_id, user_id, parent_message_ts):
-    conn = psycopg2.connect(...)
-    cur = conn.cursor()
-    
-    cur.execute("""
-        UPDATE slack_checklist_tasks
-        SET assigned_user_id = %s
-        WHERE task_id = %s AND parent_message_ts = %s
-    """, (user_id, task_id, parent_message_ts))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# ========================
 # 🌐 נקודת קצה ל־Slack Events
 # ========================
 
@@ -140,29 +51,7 @@ def slack_events():
             print("❌ שגיאה בשמירת הודעה:", e)
             import traceback
             traceback.print_exc()
-            
-    elif event_type == "message" and event.get("subtype") == "message_deleted":
-        # הודעה שנמחקה
-        deleted_ts = event.get("previous_message", {}).get("ts")
-        channel_id = event.get("channel")
-        user_id = event.get("previous_message", {}).get("user")
 
-        deleted_event = {
-            "type": "message_removed",
-            "ts": deleted_ts,
-            "channel": channel_id,
-            "user": user_id,
-            "text": "[message removed]"
-        }
-
-        try:
-            save_to_db(deleted_event, data)
-            print("🗑 הודעה שנמחקה נשמרה במסד")
-        except Exception as e:
-            print("❌ שגיאה בשמירת הודעה שנמחקה:", e)
-            import traceback
-            traceback.print_exc()
-            
     elif event_type in ["reaction_added", "reaction_removed"]:
         try:
             save_to_db(event, data)
@@ -203,9 +92,6 @@ def save_to_db(event, full_payload):
         text = f":{event.get('reaction')}: by {event.get('user')}"
         parent_event_id = event.get("item", {}).get("ts")
 
-    if not text and event_type == "interaction":
-        text = "[interaction]"
-
     # ניתוח רשימה
     is_list = False
     list_items = []
@@ -245,7 +131,8 @@ def save_to_db(event, full_payload):
             ON CONFLICT (id) DO NOTHING
         """, (
             event_id,
-            event.get("item", {}).get("channel") if is_reaction else event.get("channel"),
+            event.get("item", {}).get(
+                "channel") if is_reaction else event.get("channel"),
             event.get("user"),
             text,
             ts,
