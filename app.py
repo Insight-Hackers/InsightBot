@@ -15,7 +15,7 @@ def get_db_connection():
     try:
         conn = psycopg2.connect(
             dbname="postgres",
-            user="postgres.apphxbmngxlxromyvt",
+            user="postgres",
             password="insightbot2025",
             host="aws-0-eu-north-1.pooler.supabase.com",
             port="5432"
