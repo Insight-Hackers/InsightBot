@@ -190,6 +190,9 @@ def github_webhook():
                 'html_url': 'url'
             }, inplace=True)
 
+            # הסרת עמודות כפולות
+            df = df.loc[:, ~df.columns.duplicated()]
+
             for col in ['created_at', 'closed_at', 'merged_at']:
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
@@ -217,6 +220,9 @@ def github_webhook():
                 'html_url': 'url'
             }, inplace=True)
 
+            # הסרת עמודות כפולות
+            df = df.loc[:, ~df.columns.duplicated()]
+
             for col in ['created_at', 'closed_at']:
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors='coerce')
@@ -225,34 +231,6 @@ def github_webhook():
 
             save_dataframe_to_db(df_filtered, 'github_issues_raw')
             print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
-
-    elif event_type == "push":
-        commits = data.get("commits", [])
-        if commits:
-            df = pd.json_normalize(commits)
-
-            repository = data.get("repository", {})
-            repo_full_name = repository.get("full_name", None)
-
-            df.rename(columns={
-                'id': 'sha',
-                'message': 'message',
-                'timestamp': 'timestamp',
-                'url': 'url',
-                'author.name': 'author'
-            }, inplace=True)
-
-            df['repository'] = repo_full_name
-
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(
-                    df['timestamp'], errors='coerce')
-
-            df_filtered = filter_columns_for_table(df, 'github_commits_raw')
-
-            save_dataframe_to_db(df_filtered, 'github_commits_raw')
-            print(
-                f"💾 נשמרו {len(df_filtered)} קומיטים לטבלה github_commits_raw")
 
     else:
         print(f"⚠️ אירוע לא מטופל: {event_type}")
