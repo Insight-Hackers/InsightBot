@@ -22,7 +22,7 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 
 # def handle_voice_message_in_background(event, audio_url):
-#     print("🎙️ התחלת טיפול בהודעה קולית")
+#     print("🎙 התחלת טיפול בהודעה קולית")
 
 #     transcription = transcribe_audio_from_url(audio_url)
 #     print(f"📄 תוצאה מהתמלול: {transcription}")
@@ -46,7 +46,7 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 #             str(msg_id)
 #         ))
 #         conn.commit()
-#         print("🗣️ תמלול הוכנס לשורה קיימת במסד")
+#         print("🗣 תמלול הוכנס לשורה קיימת במסד")
 #     except Exception as e:
 #         print("❌ שגיאה בעדכון תמלול למסד:", e)
 #         conn.rollback()
@@ -331,7 +331,7 @@ def slack_events():
         save_dataframe_to_db(df_filtered, 'slack_messages_raw',
                              PRIMARY_KEYS['slack_messages_raw'])
 
-        print("🗑️ הודעה שנמחקה נשמרה במסד")
+        print("🗑 הודעה שנמחקה נשמרה במסד")
         return "", 200
 
     if event.get("type") in ["reaction_added", "reaction_removed"]:
