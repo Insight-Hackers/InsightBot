@@ -175,6 +175,28 @@ def slack_events():
 
     event = data.get("event", {})
     
+    if event.get("type") == "message" and "files" in event:
+    for f in event["files"]:
+        if f.get("filetype") == "text" and f.get("mode") == "snippet":
+            snippet_text = f.get("preview") or "[שגיאה בקריאת סניפט]"
+            df = pd.DataFrame([{
+                "id": event.get("client_msg_id") or event.get("ts") + "_snippet",
+                "event_type": "text_snippet",
+                "user_id": event.get("user"),
+                "channel_id": event.get("channel"),
+                "text": snippet_text,
+                "ts": float(event.get("ts", 0)),
+                "parent_id": event.get("client_msg_id") or event.get("ts"),
+                "is_list": False,
+                "list_items": None,
+                "num_list_items": 0,
+                "raw": json.dumps(event)
+            }])
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+            print("📄 סניפט טקסט נשמר למסד")
+            return "", 200
+
     # הוספה שאולי נמחק
     # if event.get("type") == "message" and "files" in event:
     #   for f in event["files"]:
