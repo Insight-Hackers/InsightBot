@@ -25,15 +25,18 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 openai.api_key = os.getenv("OPENAI_API_KEY")
 def handle_voice_message_in_background(event, audio_url):
     transcription = transcribe_audio_from_url(audio_url)
+    if transcription is None:
+        transcription = "[שגיאה בתמלול]"
 
+    # הכנת רשומה חדשה עם תמלול
     df = pd.DataFrame([{
-        "id": event.get("client_msg_id") or event.get("ts"),
-        "event_type": "voice_message",
+        "id": event.get("client_msg_id") or event.get("ts") + "_transcribed",  # מזהה ייחודי חדש
+        "event_type": "voice_message_transcribed",
         "user_id": event.get("user"),
         "channel_id": event.get("channel"),
-        "text": transcription or "[שגיאה בתמלול]",
+        "text": transcription,
         "ts": float(event.get("ts", 0)),
-        "parent_id": None,
+        "parent_id": event.get("client_msg_id") or event.get("ts"),
         "is_list": False,
         "list_items": None,
         "num_list_items": 0,
@@ -42,8 +45,7 @@ def handle_voice_message_in_background(event, audio_url):
 
     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
     save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-
-    print("🗣️ תמלול רקע הסתיים ונשמר למסד")
+    print("🗣️ תמלול רקע נוסף למסד כהודעה חדשה")
 
 def transcribe_audio_from_url(audio_url):
     try:
@@ -179,6 +181,24 @@ def slack_events():
         if f.get("mimetype", "").startswith("audio/"):
             audio_url = f.get("url_private")
 
+            # שמור הודעה ראשונית עם טקסט זמני [בתהליך תמלול]
+            df = pd.DataFrame([{
+                "id": event.get("client_msg_id") or event.get("ts"),
+                "event_type": "voice_message",
+                "user_id": event.get("user"),
+                "channel_id": event.get("channel"),
+                "text": "[בתהליך תמלול]",
+                "ts": float(event.get("ts", 0)),
+                "parent_id": None,
+                "is_list": False,
+                "list_items": None,
+                "num_list_items": 0,
+                "raw": json.dumps(event)
+            }])
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+
+            # הרץ את התמלול ברקע
             threading.Thread(
                 target=handle_voice_message_in_background,
                 args=(event, audio_url),
@@ -187,6 +207,7 @@ def slack_events():
 
             print("🎙️ תמלול קולית נשלח לרקע")
             return "", 200
+
         # עד פה 
         
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
