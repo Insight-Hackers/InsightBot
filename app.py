@@ -93,7 +93,7 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 #         print("❌ חריג במהלך התמלול:", e)
 #         return "[שגיאה בתמלול]"
 
-# עד פה
+# ע ד פה
 
 
 def get_db_connection():
