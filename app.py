@@ -429,15 +429,21 @@ def github_webhook():
         return "", 200
 
     elif event_type == "pull_request":
+        action = data.get("action", "")
         pr = data.get("pull_request")
+        repository = data.get("repository", {})
+
+        print(f"📦 פעולה על Pull Request: {action}")
+
         if pr:
             df = pd.json_normalize([pr])
+            df['action'] = action
 
             if 'id' not in df.columns:
                 if 'number' in df.columns:
                     df['id'] = df['number'].astype(str)
                 else:
-                    print("⚠️ PR בלי id או number - דילוג")
+                    print("⚠ PR בלי id או number - דילוג")
                     return "", 400
 
             df.rename(columns={
@@ -445,6 +451,9 @@ def github_webhook():
                 'repository.full_name': 'repository',
                 'html_url': 'url'
             }, inplace=True)
+
+            if 'repository' not in df.columns and 'full_name' in repository:
+                df['repository'] = repository['full_name']
 
             df = df.loc[:, ~df.columns.duplicated()]
 
@@ -455,7 +464,7 @@ def github_webhook():
             df_filtered = filter_columns_for_table(df, 'github_prs_raw')
             save_dataframe_to_db(df_filtered, 'github_prs_raw',
                                  PRIMARY_KEYS['github_prs_raw'])
-            print(f"💾 PR #{pr.get('number', '')} נשמר במסד")
+            print(f"💾 PR #{pr.get('number', '')} ({action}) נשמר/עודכן במסד")
 
     elif event_type == "issues":
         issue = data.get("issue")
@@ -466,7 +475,7 @@ def github_webhook():
                 if 'number' in df.columns:
                     df['id'] = df['number'].astype(str)
                 else:
-                    print("⚠️ Issue בלי id או number - דילוג")
+                    print("⚠ Issue בלי id או number - דילוג")
                     return "", 400
 
             df.rename(columns={
@@ -522,10 +531,7 @@ def github_webhook():
             df['pull_request_id'] = str(pr_id) if pr_id is not None else None
 
             if 'id' not in df.columns:
-                if 'id' in df.columns:
-                    df['id'] = df['id'].astype(str)
-                else:
-                    df['id'] = None
+                df['id'] = None
 
             df.rename(columns={
                 'user.login': 'user_id',
@@ -547,10 +553,9 @@ def github_webhook():
             print(f"💾 Review #{review.get('id', '')} נשמר במסד")
 
     else:
-        print(f"⚠️ אירוע לא מטופל: {event_type}")
+        print(f"⚠ אירוע לא מטופל: {event_type}")
 
     return "", 200
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))

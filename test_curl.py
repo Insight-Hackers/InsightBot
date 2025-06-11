@@ -10,12 +10,15 @@ headers = {
     'Content-Type': 'application/json'
 }
 res = requests.get(url, headers=headers)
-if res.status_code == 200:
-    df = pd.read_csv(io.StringIO(res.text))
-    print("Status code:", res.status_code)
-    print("DataFrame:")
-    print(df)
-else:
-    print("Failed to download list.")
-    print("Status code:", res.status_code)
-    print("Response text:", res.text)
+
+csv_url = res.json()['files'][0]['list_csv_download_url']
+headers = {
+    "Authorization": f"Bearer {api_token}"
+}
+response = requests.get(csv_url, headers=headers)
+response.raise_for_status() 
+df = pd.read_csv(io.StringIO(response.text))
+
+
+
+
