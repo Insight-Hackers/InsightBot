@@ -10,6 +10,8 @@ import openai
 from io import BytesIO
 import requests
 import threading
+from openai import OpenAI
+
 
 
 
@@ -57,36 +59,40 @@ def handle_voice_message_in_background(event, audio_url):
         cursor.close()
         conn.close()
 
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 def transcribe_audio_from_url(audio_url):
     print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
     try:
         slack_token = os.getenv('SLACK_BOT_TOKEN')
         if not slack_token:
-            print("🚫 SLACK_BOT_TOKEN לא מוגדר בסביבה")
-            return None
+            print("🚫 SLACK_BOT_TOKEN לא מוגדר")
+            return "[שגיאה בתמלול - אין טוקן]"
 
         headers = {'Authorization': f"Bearer {slack_token}"}
         response = requests.get(audio_url, headers=headers)
 
         print(f"📥 סטטוס הורדה: {response.status_code}")
-        print(f"📦 גודל תוכן שהתקבל: {len(response.content)} bytes")
+        print(f"📦 גודל קובץ: {len(response.content)} bytes")
 
         if response.status_code != 200:
             print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
-            return None
+            return "[שגיאה בהורדה]"
 
         audio_file = BytesIO(response.content)
-        audio_file.name = "audio.m4a"  # פורמט שמתאים ל-Whisper
+        audio_file.name = "audio.m4a"
 
-        print("🔊 שולח קובץ ל-Whisper לתמלול...")
-        transcript = openai.Audio.transcribe("whisper-1", audio_file, language="he")
+        # כאן נכנסות בדיוק שלוש השורות שלך:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="he"
+        )
+        text = transcript.text
 
-        print("✅ קיבלתי תגובה מ-Whisper")
-        text = transcript.get("text", "")
-        if not text:
-            print("⚠️ Whisper החזיר טקסט ריק")
-            return "[לא זוהה דיבור בתמלול]"
-        return text
+        print("✅ תמלול הושלם:", text)
+        return text if text else "[לא זוהה דיבור בתמלול]"
 
     except Exception as e:
         print("❌ חריג במהלך התמלול:", e)
