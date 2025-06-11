@@ -123,6 +123,29 @@ def slack_events():
     print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
+    if event.get("type") == "message" and event.get("subtype") == "message_deleted":
+        deleted_message = event.get("previous_message", {})
+
+        df = pd.DataFrame([{
+            "id": event.get("event_ts"),
+            "event_type": "message_deleted",
+            "user_id": deleted_message.get("user"),
+            "channel_id": event.get("channel"),
+            "text": deleted_message.get("text", "[לא נמצא טקסט]"),
+            "ts": float(event.get("event_ts")),
+            "parent_id": deleted_message.get("ts"),  # מזהה ההודעה שנמחקה
+            "is_list": False,
+            "list_items": None,
+            "num_list_items": 0,
+            "raw": json.dumps(event)
+        }])
+
+        df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+
+        print("🗑️ הודעה שנמחקה נשמרה במסד")
+        return "", 200
+
     if event.get("type") in ["reaction_added", "reaction_removed"]:
        item = event.get("item", {})
 
