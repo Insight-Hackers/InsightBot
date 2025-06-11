@@ -110,15 +110,17 @@ def verify_signature(payload_body, signature_header):
 
 def save_dataframe_to_db(df, table_name, pk_column):
     if df.empty:
-        print(f"⚠️ הטבלה {table_name} ריקה - לא נשמר כלום")
+        print(f"⚠ הטבלה {table_name} ריקה - לא נשמר כלום")
         return
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # 🛠 תיקון מרכזי: להמיר כל NaT / NaN ל־None
+        df = df.where(pd.notnull(df), None)
+
         for column in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[column]):
-                # החלפת NaT ב-None
                 df[column] = df[column].where(df[column].notna(), None)
             elif pd.api.types.is_object_dtype(df[column]):
                 df[column] = df[column].apply(
@@ -139,13 +141,14 @@ def save_dataframe_to_db(df, table_name, pk_column):
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
     except Exception as e:
         print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
+        import traceback
         traceback.print_exc()
         conn.rollback()
     finally:
         cursor.close()
         conn.close()
-
-
+        
+        
 def filter_columns_for_table(df, table_name):
     table_columns = {
         'slack_messages_raw': ['id', 'channel_id', 'user_id', 'text', 'ts', 'thread_ts', 'raw', 'event_type', 'parent_id', 'is_list', 'list_items', 'num_list_items'],
