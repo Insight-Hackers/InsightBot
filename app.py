@@ -153,9 +153,14 @@ def slack_events():
                 items.append(line[2:].strip())
         return items if items else None
 
-    df['list_items'] = df['text'].apply(extract_list_items)
-    df['is_list'] = df['list_items'].apply(lambda x: bool(x))
-    df['num_list_items'] = df['list_items'].apply(lambda x: len(x) if x else 0)
+    if 'text' in df.columns:
+         df['list_items'] = df['text'].apply(extract_list_items)
+         df['is_list'] = df['list_items'].apply(lambda x: bool(x))
+         df['num_list_items'] = df['list_items'].apply(lambda x: len(x) if x else 0)
+    else:
+         df['list_items'] = None
+         df['is_list'] = False
+         df['num_list_items'] = 0
 
     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
 
