@@ -6,15 +6,9 @@ import pandas as pd
 import psycopg2
 import os
 import traceback
-import openai
 from io import BytesIO
 import requests
 import threading
-from openai import OpenAI
-import load_dotenv
-
-# Reading the environment variables from the .env file
-load_dotenv.load_dotenv()
 
 
 app = Flask(__name__)
@@ -25,7 +19,7 @@ if GITHUB_SECRET is None:
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 # הוספה אם לא יעבוד נמחק
-# openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # def handle_voice_message_in_background(event, audio_url):
 #     print("🎙️ התחלת טיפול בהודעה קולית")
@@ -562,14 +556,18 @@ USE_MOCK = os.getenv("USE_MOCK", "true").lower() == "true"
 
 if not USE_MOCK:
     from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        raise RuntimeError(
+            "OPENAI_API_KEY לא מוגדר, ולא ניתן לעבוד במצב production בלי מפתח.")
+    client = OpenAI(api_key=OPENAI_API_KEY)
 else:
-    print("⚠️ Using mock OpenAI client")
+    print("⚠️ מצב MOCK פעיל – אין שימוש ב־OpenAI API")
 
 
 def ask_openai(prompt):
     if USE_MOCK:
-        return f"🔁 תובנה מדומה עבור: {prompt[:20]}..."
+        return f"🧪 תובנה דמוית GPT: {prompt[:30]}..."
     else:
         return client.chat.completions.create(
             model="gpt-4",
