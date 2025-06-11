@@ -22,48 +22,48 @@ if GITHUB_SECRET is None:
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 # הוספה אם לא יעבוד נמחק
-openai.api_key = os.getenv("OPENAI_API_KEY")
-def handle_voice_message_in_background(event, audio_url):
-    transcription = transcribe_audio_from_url(audio_url)
-    if transcription is None:
-        transcription = "[שגיאה בתמלול]"
+# openai.api_key = os.getenv("OPENAI_API_KEY")
+# def handle_voice_message_in_background(event, audio_url):
+#     transcription = transcribe_audio_from_url(audio_url)
+#     if transcription is None:
+#         transcription = "[שגיאה בתמלול]"
 
-    # הכנת רשומה חדשה עם תמלול
-    df = pd.DataFrame([{
-        "id": event.get("client_msg_id") or event.get("ts") + "_transcribed",  # מזהה ייחודי חדש
-        "event_type": "voice_message_transcribed",
-        "user_id": event.get("user"),
-        "channel_id": event.get("channel"),
-        "text": transcription,
-        "ts": float(event.get("ts", 0)),
-        "parent_id": event.get("client_msg_id") or event.get("ts"),
-        "is_list": False,
-        "list_items": None,
-        "num_list_items": 0,
-        "raw": json.dumps(event)
-    }])
+#     # הכנת רשומה חדשה עם תמלול
+#     df = pd.DataFrame([{
+#         "id": event.get("client_msg_id") or event.get("ts") + "_transcribed",  # מזהה ייחודי חדש
+#         "event_type": "voice_message_transcribed",
+#         "user_id": event.get("user"),
+#         "channel_id": event.get("channel"),
+#         "text": transcription,
+#         "ts": float(event.get("ts", 0)),
+#         "parent_id": event.get("client_msg_id") or event.get("ts"),
+#         "is_list": False,
+#         "list_items": None,
+#         "num_list_items": 0,
+#         "raw": json.dumps(event)
+#     }])
 
-    df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-    save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-    print("🗣️ תמלול רקע נוסף למסד כהודעה חדשה")
+#     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+#     save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+#     print("🗣️ תמלול רקע נוסף למסד כהודעה חדשה")
 
-def transcribe_audio_from_url(audio_url):
-    try:
-        headers = {'Authorization': f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"}
-        response = requests.get(audio_url, headers=headers)
-        if response.status_code != 200:
-            print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
-            return None
+# def transcribe_audio_from_url(audio_url):
+#     try:
+#         headers = {'Authorization': f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"}
+#         response = requests.get(audio_url, headers=headers)
+#         if response.status_code != 200:
+#             print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
+#             return None
 
-        audio_file = BytesIO(response.content)
-        audio_file.name = "audio.mp3"
+#         audio_file = BytesIO(response.content)
+#         audio_file.name = "audio.mp3"
 
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
-        return transcript.get("text", "")
+#         transcript = openai.Audio.transcribe("whisper-1", audio_file)
+#         return transcript.get("text", "")
 
-    except Exception as e:
-        print("❌ שגיאה בתמלול:", e)
-        return None
+#     except Exception as e:
+#         print("❌ שגיאה בתמלול:", e)
+#         return None
  #עד פה
 
 def get_db_connection():
@@ -176,37 +176,37 @@ def slack_events():
     event = data.get("event", {})
     
     # הוספה שאולי נמחק
-    if event.get("type") == "message" and "files" in event:
-      for f in event["files"]:
-        if f.get("mimetype", "").startswith("audio/"):
-            audio_url = f.get("url_private")
+    # if event.get("type") == "message" and "files" in event:
+    #   for f in event["files"]:
+    #     if f.get("mimetype", "").startswith("audio/"):
+    #         audio_url = f.get("url_private")
 
-            # שמור הודעה ראשונית עם טקסט זמני [בתהליך תמלול]
-            df = pd.DataFrame([{
-                "id": event.get("client_msg_id") or event.get("ts"),
-                "event_type": "voice_message",
-                "user_id": event.get("user"),
-                "channel_id": event.get("channel"),
-                "text": "[בתהליך תמלול]",
-                "ts": float(event.get("ts", 0)),
-                "parent_id": None,
-                "is_list": False,
-                "list_items": None,
-                "num_list_items": 0,
-                "raw": json.dumps(event)
-            }])
-            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+    #         # שמור הודעה ראשונית עם טקסט זמני [בתהליך תמלול]
+    #         df = pd.DataFrame([{
+    #             "id": event.get("client_msg_id") or event.get("ts"),
+    #             "event_type": "voice_message",
+    #             "user_id": event.get("user"),
+    #             "channel_id": event.get("channel"),
+    #             "text": "[בתהליך תמלול]",
+    #             "ts": float(event.get("ts", 0)),
+    #             "parent_id": None,
+    #             "is_list": False,
+    #             "list_items": None,
+    #             "num_list_items": 0,
+    #             "raw": json.dumps(event)
+    #         }])
+    #         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+    #         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
-            # הרץ את התמלול ברקע
-            threading.Thread(
-                target=handle_voice_message_in_background,
-                args=(event, audio_url),
-                daemon=True
-            ).start()
+    #         # הרץ את התמלול ברקע
+    #         threading.Thread(
+    #             target=handle_voice_message_in_background,
+    #             args=(event, audio_url),
+    #             daemon=True
+    #         ).start()
 
-            print("🎙️ תמלול קולית נשלח לרקע")
-            return "", 200
+    #         print("🎙️ תמלול קולית נשלח לרקע")
+    #         return "", 200
 
         # עד פה 
         
