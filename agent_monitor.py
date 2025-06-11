@@ -1,3 +1,9 @@
+
+
+
+
+
+
 import pandas as pd
 import re
 from datetime import datetime
@@ -333,7 +339,7 @@ def build_project_status_daily(github_prs_df, github_issues_df, all_users_df):
     if pd.isna(today):  # אם אין PRs בכלל, today יהיה NaT
         today = datetime.now().date()  # השתמש בתאריך היום
 
-    stale_threshold = pd.Timestamp(today) - pd.Timedelta(days=3)
+    stale_threshold = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=3)
     stale_prs = prs_df[(prs_df['state'] == 'open') & (
         pd.to_datetime(prs_df['created_at']) < stale_threshold)]
 
@@ -455,6 +461,78 @@ def save_dataframe_to_db(df, table_name):
         conn.close()
 
 
+# ✅ קובץ חדש שמטפל במחיקות הודעות מסלאק ומעדכן את האנליזה בהתאם
+
+import pandas as pd
+import psycopg2
+
+def get_db_connection():
+    return psycopg2.connect(
+        dbname="postgres",
+        user="postgres.apphxbmngxlclxromyvt",
+        password="insightbot2025",
+        host="aws-0-eu-north-1.pooler.supabase.com",
+        port="6543"
+    )
+
+# 1️⃣ טוען הודעות שנמחקו
+
+def load_deleted_message_ts():
+    """
+    טוען מזהי ts של הודעות שנמחקו (מהטבלה slack_deleted_raw)
+    ניתן להרחיב לכל סוגי מחיקה: הודעות, תגובות, ריאקציות
+    """
+    conn = get_db_connection()
+    query = "SELECT ts FROM slack_deleted_raw"
+    try:
+        df = pd.read_sql(query, conn)
+        return df['ts'].tolist()
+    finally:
+        conn.close()
+
+# 2️⃣ עוטף את load_slack_messages כדי להחזיר רק הודעות שלא נמחקו
+
+def load_filtered_slack_messages():
+    """
+    טוען הודעות Slack שלא נמחקו בפועל לפי טבלת המחיקות
+    """
+    from agent_monitor import load_slack_messages  # מתוך הקובץ המקורי שלך
+
+    slack_df = load_slack_messages()
+    deleted_ts = load_deleted_message_ts()
+
+    # סינון הודעות שנמחקו לפי timestamp
+    if 'ts' in slack_df.columns:
+        slack_df = slack_df[~slack_df['ts'].astype(str).isin(deleted_ts)]
+
+    return slack_df
+
+# 3️⃣ דוגמה להוספת מחיקה חדשה (כאילו התקבלה מ-Webhook של Slack)
+
+def insert_deleted_message(ts_to_delete):
+    """
+    מוסיף מזהה הודעה שנמחקה (ts) לטבלת slack_deleted_raw
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO slack_deleted_raw (ts, deleted_at)
+            VALUES (%s, NOW())
+            ON CONFLICT (ts) DO NOTHING
+        """, (ts_to_delete,))
+        conn.commit()
+        print(f"🗑️ ההודעה עם ts={ts_to_delete} נוספה לטבלת מחיקות.")
+    except Exception as e:
+        print(f"שגיאה בהוספת מחיקה: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+
 # ============================
 # 🧪 MAIN DEMO - הרצת דמו מלאה
 # ============================
@@ -463,7 +541,9 @@ if __name__ == "__main__":
 
     try:
         # --- 1. טעינת כל ה-DataFrames הנדרשים ממסד הנתונים ---
-        slack_df = load_slack_messages()
+        from slack_deletion_sync import load_filtered_slack_messages
+        slack_df = load_filtered_slack_messages()
+
         print(f"📊 נטענו {len(slack_df)} הודעות מ-Slack")
 
         if slack_df.empty:
