@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8" />
-    <title>הודעות Slack אחרונות</title>
+    <title>התראות אחרונות (Alerts)</title>
     <style>
         /* עיצוב כללי */
         body {
@@ -80,7 +80,7 @@
             border-radius: 5px;
         }
 
-        #messages-list {
+        #alerts-list {
             list-style: none;
             padding: 0;
             max-height: 400px;
@@ -90,47 +90,52 @@
             background: #fafafa;
         }
 
-        #messages-list li {
+        #alerts-list li {
             padding: 12px 15px;
             border-bottom: 1px solid #ddd;
             font-size: 1rem;
             line-height: 1.4;
             word-break: break-word;
             transition: background-color 0.2s ease;
+            display: flex;
+            flex-direction: column;
         }
 
-        #messages-list li:hover {
+        #alerts-list li:hover {
             background-color: #e0f2f1;
         }
 
-        /* צבעים מיוחדים לחלקי הטקסט */
         .timestamp {
             color: #999;
             font-size: 0.85rem;
-            margin-left: 8px;
+            margin-bottom: 4px;
+            align-self: flex-start;
         }
 
-        .user-id {
+        .alert-header {
             font-weight: 600;
             color: #007a5a;
+            margin-bottom: 6px;
         }
 
-        .channel-id {
-            font-weight: 600;
-            color: #004d40;
-        }
-
-        .message-text {
-            margin-right: 5px;
+        .alert-message {
             color: #222;
+            margin-bottom: 6px;
+        }
+
+        .alert-details {
+            font-size: 0.9rem;
+            color: #555;
+            display: flex;
+            gap: 15px;
         }
 
         /* Scrollbar מעוצב */
-        #messages-list::-webkit-scrollbar {
+        #alerts-list::-webkit-scrollbar {
             width: 8px;
         }
 
-        #messages-list::-webkit-scrollbar-thumb {
+        #alerts-list::-webkit-scrollbar-thumb {
             background-color: #007a5a;
             border-radius: 4px;
         }
@@ -138,89 +143,104 @@
 </head>
 <body>
     <header>
-        הודעות Slack אחרונות
-        <a href="/stats">סטטיסטיקה</a>
+        התראות אחרונות
+       <div style="
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            white-space: nowrap;
+        ">
+            <a href="/stats" style="margin-left: 30px;">סטטיסטיקה</a>
+            <a href="/commits">קומיטים</a>
+        </div>
     </header>
 
     <main>
-        <button id="refresh-btn">רענן הודעות</button>
-        <input type="text" id="search-input" placeholder="חפש בהודעות...">
-        <ul id="messages-list">
-            <li>טוען הודעות...</li>
+        <button id="refresh-btn">רענן התראות</button>
+        <input type="text" id="search-input" placeholder="חפש בהתראות...">
+        <ul id="alerts-list">
+            <li>טוען התראות...</li>
         </ul>
     </main>
 
     <script>
         const refreshBtn = document.getElementById('refresh-btn');
-        const messagesList = document.getElementById('messages-list');
+        const alertsList = document.getElementById('alerts-list');
         const searchInput = document.getElementById('search-input');
-        let allMessages = [];
+        let allAlerts = [];
 
-        function formatTimestamp(ts) {
-            if (!ts) return '';
-            const date = new Date(parseFloat(ts) * 1000);
-            return date.toLocaleString('he-IL', {
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('he-IL', {
                 year: 'numeric',
                 month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
+                day: '2-digit'
             });
         }
 
-        function renderMessages(filteredMessages = allMessages) {
-            messagesList.innerHTML = '';
-            if (filteredMessages.length === 0) {
-                messagesList.innerHTML = '<li>אין הודעות להצגה</li>';
+        function renderAlerts(filteredAlerts = allAlerts) {
+            alertsList.innerHTML = '';
+            if (filteredAlerts.length === 0) {
+                alertsList.innerHTML = '<li>אין התראות להצגה</li>';
                 return;
             }
 
-            filteredMessages.forEach(item => {
+            filteredAlerts.forEach(item => {
                 const li = document.createElement('li');
-                li.innerHTML = 
-                    `<span class="timestamp">[${formatTimestamp(item.ts)}]</span>` +
-                    `<span class="user-id"> משתמש: ${item.user_id}</span>` +
-                    `<span class="channel-id"> בערוץ: ${item.channel_id}</span>` +
-                    `<span class="message-text"> - ${item.text || ''}</span>`;
-                messagesList.appendChild(li);
+
+                li.innerHTML = `
+                    <span class="timestamp">[${formatDate(item.created_at)}]</span>
+                    <span class="alert-header">סוג: ${item.type || 'לא מוגדר'}</span>
+                    <span class="alert-message">${item.message || ''}</span>
+                    <div class="alert-details">
+                        <span>רמת חומרה: ${item.severity || 'לא מוגדר'}</span>
+                        <span>משתמש: ${item.user_id || 'לא ידוע'}</span>
+                    </div>
+                `;
+                alertsList.appendChild(li);
             });
         }
 
-        function fetchMessages(isManual = false) {
+        function fetchAlerts(isManual = false) {
             if (isManual) {
-                messagesList.innerHTML = '<li>טוען הודעות...</li>';
-            }  
-            fetch('/api/slack_messages_raw')
+                alertsList.innerHTML = '<li>טוען התראות...</li>';
+            }
+            fetch('/api/alerts')
                 .then(response => response.json())
                 .then(data => {
-                    allMessages = data;
-                    renderMessages();
+                    allAlerts = data;
+                    renderAlerts();
                 })
                 .catch(error => {
-                    console.error('Error fetching messages:', error);
-                    messagesList.innerHTML = '<li>שגיאה בטעינת ההודעות</li>';
+                    console.error('Error fetching alerts:', error);
+                    alertsList.innerHTML = '<li>שגיאה בטעינת ההתראות</li>';
                 });
         }
 
-        refreshBtn.addEventListener('click', fetchMessages);
+        refreshBtn.addEventListener('click', () => fetchAlerts(true));
 
         // רענון כל 30 שניות
-        setInterval(fetchMessages, 30000);
+        setInterval(fetchAlerts, 30000);
 
-        // חיפוש
+        // חיפוש בהתראות לפי הודעה, סוג, חומרה או משתמש
         searchInput.addEventListener('input', () => {
             const query = searchInput.value.toLowerCase();
-            const filtered = allMessages.filter(item =>
-                (item.text && item.text.toLowerCase().includes(query)) ||
-                (item.user_id && item.user_id.toLowerCase().includes(query)) ||
-                (item.channel_id && item.channel_id.toLowerCase().includes(query))
+            const filtered = allAlerts.filter(item =>
+                (item.message && item.message.toLowerCase().includes(query)) ||
+                (item.type && item.type.toLowerCase().includes(query)) ||
+                (item.severity && item.severity.toLowerCase().includes(query)) ||
+                (item.user_id && item.user_id.toLowerCase().includes(query))
             );
-            renderMessages(filtered);
+            renderAlerts(filtered);
         });
 
-        // טען הודעות כשעמוד נטען
-        window.onload = fetchMessages;
+        // טען התראות כשעמוד נטען
+        window.onload = fetchAlerts;
     </script>
 </body>
 </html>

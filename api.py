@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 import psycopg2
 import json
-from datetime import datetime
+from datetime import datetime, date  # תיקון: מוסיף גם date
 
 app = Flask(__name__)
 
@@ -29,6 +29,11 @@ def index():
 @app.route('/stats')
 def stats():
     return render_template('stats.html')
+
+@app.route('/commits')
+def commits():
+    return render_template('commits.html')
+
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
@@ -68,15 +73,58 @@ def save_to_db(event, full_payload):
     cur.close()
     conn.close()
 
-@app.route('/api/slack_messages_raw')
-def slack_messages_raw():
+
+@app.route('/api/user_daily_summary')
+def user_daily_summary_api():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT event_id, channel_id, user_id, text, extract(epoch from ts) as ts_epoch, thread_ts
-        FROM slack_messages_raw
-        ORDER BY ts DESC
-        LIMIT 10
+    SELECT
+        user_id,
+        day,
+        total_messages,
+        help_requests,
+        stuck_passive,
+        stuck_active,
+        resolved,
+        completed_tasks,
+        open_tasks,
+        commits,
+        reviews
+    FROM user_daily_summary
+    ORDER BY day DESC, user_id
+    LIMIT 50
+""")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    data = []
+    for row in rows:
+        data.append({
+            'user_id': row[0],
+            'day': row[1].isoformat() if row[1] else None,
+            'total_messages': row[2],
+            'help_requests': row[3],
+            'stuck_passive': row[4],
+            'stuck_active': row[5],
+            'resolved': row[6],
+            'completed_tasks': row[7],
+            'open_tasks': row[8],
+            'commits': row[9],
+            'reviews': row[10]
+        })
+    return jsonify(data)
+
+@app.route('/api/github_commits_raw')
+def github_commits_raw():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT sha, author, message, timestamp, repository, url
+        FROM github_commits_raw
+        ORDER BY timestamp DESC
+        LIMIT 20
     """)
     rows = cur.fetchall()
     cur.close()
@@ -84,22 +132,43 @@ def slack_messages_raw():
 
     data = []
     for row in rows:
-        ts_val = ''
-        if row[4]:
-            try:
-                ts_val = datetime.fromtimestamp(row[4]).isoformat()
-            except Exception:
-                ts_val = str(row[4])
         data.append({
-            'event_id': row[0],
-            'channel_id': row[1],
-            'user_id': row[2],
-            'text': row[3],
-            'ts': ts_val,
-            'thread_ts': row[5]
+            'sha': row[0],
+            'author': row[1],
+            'message': row[2],
+            'timestamp': row[3].isoformat() if row[3] else None,
+            'repository': row[4],
+            'url': row[5]
         })
+    return jsonify(data)
+
+@app.route('/api/alerts')
+def alerts_api():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT *
+        FROM alerts
+        ORDER BY created_at DESC
+        LIMIT 50
+    """)
+    rows = cur.fetchall()
+    colnames = [desc[0] for desc in cur.description]  # שמות העמודות
+    cur.close()
+    conn.close()
+
+    data = []
+    for row in rows:
+        item = {}
+        for col, val in zip(colnames, row):
+            if isinstance(val, (datetime, date)):  # תיקון כאן: בודק גם date
+                item[col] = val.isoformat()
+            else:
+                item[col] = val
+        data.append(item)
 
     return jsonify(data)
+
 
 if __name__ == "__main__":
     print(":rocket: Running the server in http://localhost:5000")

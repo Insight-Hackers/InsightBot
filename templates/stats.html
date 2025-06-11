@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8" />
-    <title>סטטיסטיקה של Slack</title>
+    <title>סיכום יומי למשתמשים</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -10,38 +10,157 @@
             margin: 0;
             padding: 0;
             color: #333;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            text-align: center;
         }
 
         header {
             background-color: #007a5a;
             color: white;
             padding: 20px;
-            width: 100%;
+            text-align: center;
             font-size: 1.6rem;
             font-weight: bold;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: relative;
         }
 
-        a {
-            color: #007a5a;
-            margin-top: 20px;
-            display: inline-block;
+        header a {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: white;
             text-decoration: underline;
+            font-size: 1rem;
+        }
+
+        main {
+            flex-grow: 1;
+            max-width: 1300px;
+            margin: 30px auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-weight: 700;
+            color: #004d40;
+            letter-spacing: 1.5px;
+        }
+
+        #summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 0.9rem;
+        }
+
+        #summary-table th, #summary-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: right;
+        }
+
+        #summary-table th {
+            background-color: #e0f2f1;
+            font-weight: bold;
+            color: #004d40;
+        }
+
+        #summary-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        #summary-table tr:hover {
+            background-color: #e0f2f1;
+        }
+
+        #loading-message {
+            text-align: center;
+            padding: 20px;
+            color: #555;
         }
     </style>
 </head>
 <body>
-    <header>סטטיסטיקה של Slack</header>
+    <header>
+        סיכום יומי למשתמשים
+        <a href="/">חזרה למסך הראשי</a>
+    </header>
 
     <main>
-        <h2>בקרוב: כאן תוצג סטטיסטיקה (כמות הודעות, משתמשים פעילים, ערוצים וכו')</h2>
-        <a href="/">חזרה לדף הראשי</a>
+        <h1>נתוני סיכום יומי</h1>
+        <div id="loading-message">טוען נתונים...</div>
+        <table id="summary-table">
+            <thead>
+                <tr>
+                    <th>מזהה משתמש</th>
+                    <th>תאריך</th>
+                    <th>מס' הודעות</th>
+                    <th>בקשות עזרה</th>
+                    <th>תקוע פסיבי</th>
+                    <th>תקוע פעיל</th>
+                    <th>נפתרו</th>
+                    <th>משימות שהושלמו</th>
+                    <th>משימות פתוחות</th>
+                    <th>קודים</th>
+                    <th>סקירות</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const summaryTableBody = document.querySelector('#summary-table tbody');
+            const loadingMessage = document.getElementById('loading-message');
+
+            function fetchUserDailySummary() {
+                loadingMessage.style.display = 'block';
+                summaryTableBody.innerHTML = '';
+                fetch('/api/user_daily_summary')
+                    .then(response => response.json())
+                    .then(data => {
+                        loadingMessage.style.display = 'none';
+                        if (data.length === 0) {
+                            summaryTableBody.innerHTML = '<tr><td colspan="11">אין נתונים להצגה</td></tr>';
+                            return;
+                        }
+
+                        data.forEach(item => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${item.user_id}</td>
+                                <td>${item.day ? new Date(item.day).toLocaleDateString('he-IL') : ''}</td>
+                                <td>${Number(item.total_messages ?? 0)}</td>
+                                <td>${Number(item.help_requests ?? 0)}</td>
+                                <td>${Number(item.stuck_passive ?? 0)}</td>
+                                <td>${Number(item.stuck_active ?? 0)}</td>
+                                <td>${Number(item.resolved ?? 0)}</td>
+                                <td>${Number(item.completed_tasks ?? 0)}</td>
+                                <td>${Number(item.open_tasks ?? 0)}</td>
+                                <td>${Number(item.commits ?? 0)}</td>
+                                <td>${Number(item.reviews ?? 0)}</td>
+                            `;
+                            summaryTableBody.appendChild(row);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching user daily summary:', error);
+                        loadingMessage.style.display = 'none';
+                        summaryTableBody.innerHTML = '<tr><td colspan="11">שגיאה בטעינת הנתונים</td></tr>';
+                    });
+            }
+
+            fetchUserDailySummary();
+        });
+    </script>
 </body>
 </html>

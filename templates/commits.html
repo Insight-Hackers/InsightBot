@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <title>קומיטים אחרונים מ-GitHub</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f4f4f4;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            background: white;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .sha {
+            font-weight: bold;
+            color: #007a5a;
+        }
+        .repo {
+            color: #555;
+        }
+        .message {
+            margin: 5px 0;
+        }
+        .time {
+            font-size: 0.9em;
+            color: #888;
+        }
+        .link {
+            display: block;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <h1>קומיטים אחרונים מ-GitHub</h1>
+    <ul id="commits-list">
+        <li>טוען...</li>
+    </ul>
+
+    <script>
+        fetch('/api/github_commits_raw')
+            .then(response => response.json())
+            .then(data => {
+                const ul = document.getElementById('commits-list');
+                ul.innerHTML = '';
+                if (data.length === 0) {
+                    ul.innerHTML = '<li>לא נמצאו קומיטים</li>';
+                    return;
+                }
+
+                data.forEach(commit => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <div class="sha">SHA: ${commit.sha}</div>
+                        <div class="repo">רפוזיטורי: ${commit.repository || 'לא ידוע'}</div>
+                        <div class="message">${commit.message || '(ללא הודעה)'}</div>
+                        <div class="time">תאריך: ${new Date(commit.timestamp).toLocaleString('he-IL')}</div>
+                        <a class="link" href="${commit.url}" target="_blank">לצפייה בקומיט</a>
+                    `;
+                    ul.appendChild(li);
+                });
+            })
+            .catch(error => {
+                console.error('שגיאה בטעינת קומיטים:', error);
+                document.getElementById('commits-list').innerHTML = '<li>שגיאה בטעינה</li>';
+            });
+    </script>
+</body>
+</html>
