@@ -13,9 +13,6 @@ import threading
 from openai import OpenAI
 
 
-
-
-
 app = Flask(__name__)
 
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
@@ -25,6 +22,7 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 # הוספה אם לא יעבוד נמחק
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
 
 def handle_voice_message_in_background(event, audio_url):
     print("🎙️ התחלת טיפול בהודעה קולית")
@@ -62,6 +60,7 @@ def handle_voice_message_in_background(event, audio_url):
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
 def transcribe_audio_from_url(audio_url):
     print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
     try:
@@ -98,7 +97,8 @@ def transcribe_audio_from_url(audio_url):
         print("❌ חריג במהלך התמלול:", e)
         return "[שגיאה בתמלול]"
 
- #עד פה
+ # עד פה
+
 
 def get_db_connection():
     try:
@@ -173,8 +173,8 @@ def save_dataframe_to_db(df, table_name, pk_column):
     finally:
         cursor.close()
         conn.close()
-        
-        
+
+
 def filter_columns_for_table(df, table_name):
     table_columns = {
         'slack_messages_raw': ['id', 'channel_id', 'user_id', 'text', 'ts', 'thread_ts', 'raw', 'event_type', 'parent_id', 'is_list', 'list_items', 'num_list_items'],
@@ -215,6 +215,7 @@ def slack_events():
     if event.get("type") == "message" and "subtype" not in event:
         # זהו מקרה של הודעה רגילה - נבדוק אם היא רשימה ונשמור למסד
         text = event.get("text", "")
+
         def extract_list_items(text):
             if not isinstance(text, str):
                 return None
@@ -244,72 +245,77 @@ def slack_events():
         }])
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                             PRIMARY_KEYS['slack_messages_raw'])
         print("📝 הודעת טקסט רגילה נשמרה למסד (כולל בדיקת רשימה)")
         return "", 200
 
     if event.get("type") == "message" and "files" in event:
-     for f in event["files"]:
-        if f.get("filetype") == "text" and f.get("mode") == "snippet":
-            snippet_text = f.get("preview") or "[שגיאה בקריאת סניפט]"
-            df = pd.DataFrame([{
-                "id": event.get("client_msg_id") or event.get("ts") + "_snippet",
-                "event_type": "text_snippet",
-                "user_id": event.get("user"),
-                "channel_id": event.get("channel"),
-                "text": snippet_text,
-                "ts": float(event.get("ts", 0)),
-                "parent_id": event.get("client_msg_id") or event.get("ts"),
-                "is_list": False,
-                "list_items": None,
-                "num_list_items": 0,
-                "raw": json.dumps(event)
-            }])
-            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-            print("📄 סניפט טקסט נשמר למסד")
-            return "", 200
+        for f in event["files"]:
+            if f.get("filetype") == "text" and f.get("mode") == "snippet":
+                snippet_text = f.get("preview") or "[שגיאה בקריאת סניפט]"
+                df = pd.DataFrame([{
+                    "id": event.get("client_msg_id") or event.get("ts") + "_snippet",
+                    "event_type": "text_snippet",
+                    "user_id": event.get("user"),
+                    "channel_id": event.get("channel"),
+                    "text": snippet_text,
+                    "ts": float(event.get("ts", 0)),
+                    "parent_id": event.get("client_msg_id") or event.get("ts"),
+                    "is_list": False,
+                    "list_items": None,
+                    "num_list_items": 0,
+                    "raw": json.dumps(event)
+                }])
+                df_filtered = filter_columns_for_table(
+                    df, 'slack_messages_raw')
+                save_dataframe_to_db(
+                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                print("📄 סניפט טקסט נשמר למסד")
+                return "", 200
 
     # הוספה שאולי נמחק
     if event.get("type") == "message" and "files" in event:
-     for f in event["files"]:
-        mimetype = f.get("mimetype", "")
-        print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
+        for f in event["files"]:
+            mimetype = f.get("mimetype", "")
+            print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
 
-        if mimetype.startswith("audio/"):
-            audio_url = f.get("url_private")
-            print(f"🔗 קישור להורדה: {audio_url}")
+            if mimetype.startswith("audio/"):
+                audio_url = f.get("url_private")
+                print(f"🔗 קישור להורדה: {audio_url}")
 
-            message_id = event.get("client_msg_id") or event.get("ts")
-            print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
+                message_id = event.get("client_msg_id") or event.get("ts")
+                print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
 
-            df = pd.DataFrame([{
-                "id": message_id,
-                "event_type": "voice_message",
-                "user_id": event.get("user"),
-                "channel_id": event.get("channel"),
-                "text": "[בתהליך תמלול]",
-                "ts": float(event.get("ts", 0)),
-                "parent_id": None,
-                "is_list": False,
-                "list_items": None,
-                "num_list_items": 0,
-                "raw": json.dumps(event)
-            }])
-            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                df = pd.DataFrame([{
+                    "id": message_id,
+                    "event_type": "voice_message",
+                    "user_id": event.get("user"),
+                    "channel_id": event.get("channel"),
+                    "text": "[בתהליך תמלול]",
+                    "ts": float(event.get("ts", 0)),
+                    "parent_id": None,
+                    "is_list": False,
+                    "list_items": None,
+                    "num_list_items": 0,
+                    "raw": json.dumps(event)
+                }])
+                df_filtered = filter_columns_for_table(
+                    df, 'slack_messages_raw')
+                save_dataframe_to_db(
+                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
-            print("🚀 מפעיל תמלול קולית ברקע")
-            threading.Thread(
-                target=handle_voice_message_in_background,
-                args=(event, audio_url),
-                daemon=True
-            ).start()
+                print("🚀 מפעיל תמלול קולית ברקע")
+                threading.Thread(
+                    target=handle_voice_message_in_background,
+                    args=(event, audio_url),
+                    daemon=True
+                ).start()
 
-            return "", 200
+                return "", 200
 
-        # עד פה 
-        
+            # עד פה
+
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
         deleted_message = event.get("previous_message", {})
 
@@ -328,38 +334,39 @@ def slack_events():
         }])
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                             PRIMARY_KEYS['slack_messages_raw'])
 
         print("🗑️ הודעה שנמחקה נשמרה במסד")
         return "", 200
 
     if event.get("type") in ["reaction_added", "reaction_removed"]:
-       item = event.get("item", {})
+        item = event.get("item", {})
 
-       df = pd.DataFrame([{
-           "id": event.get("eve ז\nt_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
-           "event_type": event.get("type"),
-           "user_id": event.get("user"),
-           "channel_id": item.get("channel"),
-           "parent_id": item.get("ts"),  # ההודעה שאליה נוספה הריאקציה
-           "text": event.get("reaction"),  # שם הריאקציה (למשל 'thumbsup')
-           "ts": float(event.get("event_ts", 0)),  # זמן האירוע עצמו
-           "is_list": False,
-           "list_items": None,
-           "num_list_items": 0,
-           "raw": json.dumps(event)
-       }])
+        df = pd.DataFrame([{
+            "id": event.get("eve ז\nt_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
+            "event_type": event.get("type"),
+            "user_id": event.get("user"),
+            "channel_id": item.get("channel"),
+            "parent_id": item.get("ts"),  # ההודעה שאליה נוספה הריאקציה
+            "text": event.get("reaction"),  # שם הריאקציה (למשל 'thumbsup')
+            "ts": float(event.get("event_ts", 0)),  # זמן האירוע עצמו
+            "is_list": False,
+            "list_items": None,
+            "num_list_items": 0,
+            "raw": json.dumps(event)
+        }])
 
-       # סינון עמודות מיותרות
-       df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-       df_filtered = df_filtered.sort_values(by="ts", ascending=True)
+        # סינון עמודות מיותרות
+        df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+        df_filtered = df_filtered.sort_values(by="ts", ascending=True)
 
-       save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                             PRIMARY_KEYS['slack_messages_raw'])
 
-       print(f"✅ Reaction ({event.get('type')}) נשמר למסד")
-       return "", 200
+        print(f"✅ Reaction ({event.get('type')}) נשמר למסד")
+        return "", 200
 
-    
     df = pd.json_normalize([event])
 
     if 'client_msg_id' in df.columns:
@@ -391,13 +398,14 @@ def slack_events():
         return items if items else None
 
     if 'text' in df.columns:
-         df['list_items'] = df['text'].apply(extract_list_items)
-         df['is_list'] = df['list_items'].apply(lambda x: bool(x))
-         df['num_list_items'] = df['list_items'].apply(lambda x: len(x) if x else 0)
+        df['list_items'] = df['text'].apply(extract_list_items)
+        df['is_list'] = df['list_items'].apply(lambda x: bool(x))
+        df['num_list_items'] = df['list_items'].apply(
+            lambda x: len(x) if x else 0)
     else:
-         df['list_items'] = None
-         df['is_list'] = False
-         df['num_list_items'] = 0
+        df['list_items'] = None
+        df['is_list'] = False
+        df['num_list_items'] = 0
 
     df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
 
@@ -548,6 +556,25 @@ def github_webhook():
         print(f"⚠️ אירוע לא מטופל: {event_type}")
 
     return "", 200
+
+
+USE_MOCK = os.getenv("USE_MOCK", "true").lower() == "true"
+
+if not USE_MOCK:
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+else:
+    print("⚠️ Using mock OpenAI client")
+
+
+def ask_openai(prompt):
+    if USE_MOCK:
+        return f"🔁 תובנה מדומה עבור: {prompt[:20]}..."
+    else:
+        return client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
+        ).choices[0].message.content
 
 
 if __name__ == "__main__":
