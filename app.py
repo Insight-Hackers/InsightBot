@@ -124,30 +124,31 @@ def slack_events():
 
     event = data.get("event", {})
     if event.get("type") in ["reaction_added", "reaction_removed"]:
-        df = pd.json_normalize([event])
-        
-        df['id'] = df['event_ts'].astype(str)
-        df.rename(columns={
-            'user': 'user_id',
-            'item.channel': 'channel_id',
-            'item.ts': 'parent_id',
-            'reaction': 'text',
-            'type': 'event_type'
-        }, inplace=True)
+       item = event.get("item", {})
 
-        df['ts'] = pd.to_numeric(df['event_ts'], errors='coerce')
-        df['raw'] = df.apply(lambda row: json.dumps(event), axis=1)
+       df = pd.DataFrame([{
+           "id": event.get("event_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
+           "event_type": event.get("type"),
+           "user_id": event.get("user"),
+           "channel_id": item.get("channel"),
+           "parent_id": item.get("ts"),  # ההודעה שאליה נוספה הריאקציה
+           "text": event.get("reaction"),  # שם הריאקציה (למשל 'thumbsup')
+           "ts": float(event.get("event_ts", 0)),  # זמן האירוע עצמו
+           "is_list": False,
+           "list_items": None,
+           "num_list_items": 0,
+           "raw": json.dumps(event)
+       }])
 
-        df['is_list'] = False
-        df['list_items'] = None
-        df['num_list_items'] = 0
+       # סינון עמודות מיותרות
+       df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+       df_filtered = df_filtered.sort_values(by="ts", ascending=True)
 
-        df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        df_filtered = df_filtered.sort_values(by="ts", ascending=True)
+       save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-        print(f"✅ Reaction ({event.get('type')}) נשמר למסד")
-        return "", 200
+       print(f"✅ Reaction ({event.get('type')}) נשמר למסד")
+       return "", 200
+
     
     df = pd.json_normalize([event])
 
