@@ -9,6 +9,9 @@ import traceback
 from io import BytesIO
 import requests
 import threading
+import openai
+from openai import OpenAI
+
 
 
 app = Flask(__name__)
@@ -92,6 +95,7 @@ def transcribe_audio_from_url(audio_url):
     except Exception as e:
         print("❌ חריג במהלך התמלול:", e)
         return "[שגיאה בתמלול]"
+
 
 # ע ד פה
 
