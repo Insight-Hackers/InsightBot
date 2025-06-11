@@ -1,3 +1,4 @@
+from pprint import pprint
 import requests
 import pandas as pd
 from dotenv import load_dotenv
@@ -14,9 +15,9 @@ headers = {
 res = requests.get(url, headers=headers)
 csv_url = res.json()['list_csv_download_url']
 # Download the CSV file
-csv_res = requests.get(url=csv_url,headers=headers)
-csv_res.raise_for_status() 
+csv_res = requests.get(url=csv_url, headers=headers)
+csv_res.raise_for_status()
 csv_data = csv_res.content.decode('utf-8').splitlines()
-total_csv = [dict(zip(csv_data[0].split(','), line.split(','))) for line in csv_data[1:]]
-from pprint import pprint
-pprint(total_csv)
+total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
+             for line in csv_data[1:]]
+pprint(total_csv)  # צב
