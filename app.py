@@ -556,6 +556,150 @@ def github_webhook():
         print(f"⚠ אירוע לא מטופל: {event_type}")
 
     return "", 200
+    signature = request.headers.get('X-Hub-Signature-256')
+    payload = request.data
+
+    if not verify_signature(payload, signature):
+        print("❌ חתימת webhook שגויה - דחה את הבקשה")
+        abort(400, "Invalid signature")
+
+    event_type = request.headers.get("X-GitHub-Event")
+    data = request.json
+
+    print(f"📢 GitHub event received: {event_type}")
+
+    if event_type == "ping":
+        print("✅ Received ping event from GitHub")
+        return "", 200
+
+    elif event_type == "pull_request":
+        action = data.get("action", "")
+        pr = data.get("pull_request")
+        repository = data.get("repository", {})
+
+        print(f"📦 פעולה על Pull Request: {action}")
+
+        if pr:
+            df = pd.json_normalize([pr])
+            df['action'] = action
+
+            if 'id' not in df.columns:
+                if 'number' in df.columns:
+                    df['id'] = df['number'].astype(str)
+                else:
+                    print("⚠ PR בלי id או number - דילוג")
+                    return "", 400
+
+            df.rename(columns={
+                'user.login': 'user_id',
+                'repository.full_name': 'repository',
+                'html_url': 'url'
+            }, inplace=True)
+
+            if 'repository' not in df.columns and 'full_name' in repository:
+                df['repository'] = repository['full_name']
+
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            for col in ['created_at', 'closed_at', 'merged_at']:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+
+            df_filtered = filter_columns_for_table(df, 'github_prs_raw')
+            save_dataframe_to_db(df_filtered, 'github_prs_raw',
+                                 PRIMARY_KEYS['github_prs_raw'])
+            print(f"💾 PR #{pr.get('number', '')} ({action}) נשמר/עודכן במסד")
+
+    elif event_type == "issues":
+        issue = data.get("issue")
+        if issue:
+            df = pd.json_normalize([issue])
+
+            if 'id' not in df.columns:
+                if 'number' in df.columns:
+                    df['id'] = df['number'].astype(str)
+                else:
+                    print("⚠ Issue בלי id או number - דילוג")
+                    return "", 400
+
+            df.rename(columns={
+                'user.login': 'user_id',
+                'repository.full_name': 'repository',
+                'html_url': 'url'
+            }, inplace=True)
+
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            for col in ['created_at', 'closed_at']:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+
+            df_filtered = filter_columns_for_table(df, 'github_issues_raw')
+            save_dataframe_to_db(
+                df_filtered, 'github_issues_raw', PRIMARY_KEYS['github_issues_raw'])
+            print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
+
+    elif event_type == "push":
+        commits = data.get("commits", [])
+        repository = data.get("repository", {})
+        if commits:
+            df = pd.json_normalize(commits)
+
+            df.rename(columns={
+                'id': 'sha',
+                'author.name': 'author',
+                'message': 'message',
+                'timestamp': 'timestamp'
+            }, inplace=True)
+
+            df['repository'] = repository.get('full_name', '')
+            df['url'] = None
+
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(
+                    df['timestamp'], errors='coerce')
+
+            df_filtered = filter_columns_for_table(df, 'github_commits_raw')
+            save_dataframe_to_db(
+                df_filtered, 'github_commits_raw', PRIMARY_KEYS['github_commits_raw'])
+            print(f"💾 נשמרו {len(df_filtered)} קומיטים במסד")
+
+    elif event_type == "pull_request_review":
+        review = data.get("review")
+        pr = data.get("pull_request", {})
+        if review:
+            df = pd.json_normalize([review])
+            pr_id = pr.get('id', None)
+            df['pull_request_id'] = str(pr_id) if pr_id is not None else None
+
+            if 'id' not in df.columns:
+                df['id'] = None
+
+            df.rename(columns={
+                'user.login': 'user_id',
+                'state': 'state',
+                'body': 'body',
+                'created_at': 'created_at',
+                'html_url': 'url'
+            }, inplace=True)
+
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            if 'created_at' in df.columns:
+                df['created_at'] = pd.to_datetime(
+                    df['created_at'], errors='coerce')
+
+            df_filtered = filter_columns_for_table(df, 'github_reviews_raw')
+            save_dataframe_to_db(
+                df_filtered, 'github_reviews_raw', PRIMARY_KEYS['github_reviews_raw'])
+            print(f"💾 Review #{review.get('id', '')} נשמר במסד")
+
+    else:
+        print(f"⚠ אירוע לא מטופל: {event_type}")
+
+    return "", 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
