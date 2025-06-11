@@ -93,7 +93,7 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 #         print("❌ חריג במהלך התמלול:", e)
 #         return "[שגיאה בתמלול]"
 
- # עד פה
+# עד פה
 
 
 def get_db_connection():
@@ -337,19 +337,19 @@ def slack_events():
     if event.get("type") in ["reaction_added", "reaction_removed"]:
         item = event.get("item", {})
 
-       df = pd.DataFrame([{
-           "id": event.get("event_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
-           "event_type": event.get("type"),
-           "user_id": event.get("user"),
-           "channel_id": item.get("channel"),
-           "parent_id": item.get("ts"),  # ההודעה שאליה נוספה הריאקציה
-           "text": event.get("reaction"),  # שם הריאקציה (למשל 'thumbsup')
-           "ts": float(event.get("event_ts", 0)),  # זמן האירוע עצמו
-           "is_list": False,
-           "list_items": None,
-           "num_list_items": 0,
-           "raw": json.dumps(event)
-       }])
+        df = pd.DataFrame([{
+            "id": event.get("event_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
+            "event_type": event.get("type"),
+            "user_id": event.get("user"),
+            "channel_id": item.get("channel"),
+            "parent_id": item.get("ts"),  # ההודעה שאליה נוספה הריאקציה
+            "text": event.get("reaction"),  # שם הריאקציה (למשל 'thumbsup')
+            "ts": float(event.get("event_ts", 0)),  # זמן האירוע עצמו
+            "is_list": False,
+            "list_items": None,
+            "num_list_items": 0,
+            "raw": json.dumps(event)
+        }])
 
         # סינון עמודות מיותרות
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
