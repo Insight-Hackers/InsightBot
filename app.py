@@ -19,7 +19,7 @@ if GITHUB_SECRET is None:
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 # הוספה אם לא יעבוד נמחק
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
 
 # def handle_voice_message_in_background(event, audio_url):
 #     print("🎙️ התחלת טיפול בהודעה קולית")
