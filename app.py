@@ -174,9 +174,45 @@ def slack_events():
     print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
-    
+    # רשימה
+    if event.get("type") == "message" and "subtype" not in event:
+        # זהו מקרה של הודעה רגילה - נבדוק אם היא רשימה ונשמור למסד
+        text = event.get("text", "")
+        def extract_list_items(text):
+            if not isinstance(text, str):
+                return None
+            lines = text.splitlines()
+            items = []
+            for line in lines:
+                if line.strip().startswith(("* ", "- ", "• ")):
+                    items.append(line[2:].strip())
+            return items if items else None
+
+        list_items = extract_list_items(text)
+        is_list = bool(list_items)
+        num_list_items = len(list_items) if list_items else 0
+
+        df = pd.DataFrame([{
+            "id": event.get("client_msg_id") or event.get("ts"),
+            "event_type": "message",
+            "user_id": event.get("user"),
+            "channel_id": event.get("channel"),
+            "text": text,
+            "ts": float(event.get("ts", 0)),
+            "parent_id": event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            "is_list": is_list,
+            "list_items": list_items,
+            "num_list_items": num_list_items,
+            "raw": json.dumps(event)
+        }])
+
+        df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        print("📝 הודעת טקסט רגילה נשמרה למסד (כולל בדיקת רשימה)")
+        return "", 200
+
     if event.get("type") == "message" and "files" in event:
-    for f in event["files"]:
+     for f in event["files"]:
         if f.get("filetype") == "text" and f.get("mode") == "snippet":
             snippet_text = f.get("preview") or "[שגיאה בקריאת סניפט]"
             df = pd.DataFrame([{
