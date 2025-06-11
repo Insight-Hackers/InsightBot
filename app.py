@@ -28,24 +28,28 @@ def handle_voice_message_in_background(event, audio_url):
     if transcription is None:
         transcription = "[שגיאה בתמלול]"
 
-    # הכנת רשומה חדשה עם תמלול
-    df = pd.DataFrame([{
-        "id": event.get("client_msg_id") or event.get("ts") + "_transcribed",  # מזהה ייחודי חדש
-        "event_type": "voice_message_transcribed",
-        "user_id": event.get("user"),
-        "channel_id": event.get("channel"),
-        "text": transcription,
-        "ts": float(event.get("ts", 0)),
-        "parent_id": event.get("client_msg_id") or event.get("ts"),
-        "is_list": False,
-        "list_items": None,
-        "num_list_items": 0,
-        "raw": json.dumps(event)
-    }])
+    msg_id = event.get("client_msg_id") or event.get("ts")
 
-    df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-    save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-    print("🗣️ תמלול רקע נוסף למסד כהודעה חדשה")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE slack_messages_raw
+            SET text = %s, event_type = %s
+            WHERE id = %s
+        """, (
+            transcription,
+            "voice_message_transcribed",
+            str(msg_id)
+        ))
+        conn.commit()
+        print("🗣️ תמלול הוכנס לשורה קיימת במסד")
+    except Exception as e:
+        print("❌ שגיאה בעדכון תמלול:", e)
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 def transcribe_audio_from_url(audio_url):
     try:
@@ -56,14 +60,18 @@ def transcribe_audio_from_url(audio_url):
             return None
 
         audio_file = BytesIO(response.content)
-        audio_file.name = "audio.mp3"
+        audio_file.name = "audio.m4a"
 
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
-        return transcript.get("text", "")
+        transcript = openai.Audio.transcribe("whisper-1", audio_file, language="he")
+        text = transcript.get("text", "")
+        if not text:
+            return "[לא זוהה דיבור בתמלול]"
+        return text
 
     except Exception as e:
         print("❌ שגיאה בתמלול:", e)
-        return None
+        return "[שגיאה בתמלול]"
+
  #עד פה
 
 def get_db_connection():
