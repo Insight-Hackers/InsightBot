@@ -6,6 +6,9 @@ import pandas as pd
 import psycopg2
 import os
 import traceback
+import openai
+from io import BytesIO
+
 
 app = Flask(__name__)
 
@@ -14,6 +17,27 @@ if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
+# הוספה אם לא יעבוד נמחק
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def transcribe_audio_from_url(audio_url):
+    try:
+        headers = {'Authorization': f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"}
+        response = requests.get(audio_url, headers=headers)
+        if response.status_code != 200:
+            print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
+            return None
+
+        audio_file = BytesIO(response.content)
+        audio_file.name = "audio.mp3"
+
+        transcript = openai.Audio.transcribe("whisper-1", audio_file)
+        return transcript.get("text", "")
+
+    except Exception as e:
+        print("❌ שגיאה בתמלול:", e)
+        return None
+ #עד פה
 
 def get_db_connection():
     try:
@@ -123,6 +147,35 @@ def slack_events():
     print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
+    
+    # הוספה שאולי נמחק
+    if event.get("type") == "message" and "files" in event:
+      for f in event["files"]:
+        if f.get("mimetype", "").startswith("audio/"):
+            audio_url = f.get("url_private")
+            transcription = transcribe_audio_from_url(audio_url)
+
+            df = pd.DataFrame([{
+                "id": event.get("client_msg_id") or event.get("ts"),
+                "event_type": "voice_message",
+                "user_id": event.get("user"),
+                "channel_id": event.get("channel"),
+                "text": transcription or "[שגיאה בתמלול]",
+                "ts": float(event.get("ts", 0)),
+                "parent_id": None,
+                "is_list": False,
+                "list_items": None,
+                "num_list_items": 0,
+                "raw": json.dumps(event)
+            }])
+
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+
+            print("🗣️ הודעה קולית תומללה ונשמרה למסד")
+            return "", 200
+        # עד פה 
+        
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
         deleted_message = event.get("previous_message", {})
 
