@@ -23,12 +23,18 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
 # הוספה אם לא יעבוד נמחק
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
 def handle_voice_message_in_background(event, audio_url):
+    print("🎙️ התחלת טיפול בהודעה קולית")
+
     transcription = transcribe_audio_from_url(audio_url)
+    print(f"📄 תוצאה מהתמלול: {transcription}")
+
     if transcription is None:
         transcription = "[שגיאה בתמלול]"
 
     msg_id = event.get("client_msg_id") or event.get("ts")
+    print(f"🆔 מזהה הודעה לעדכון: {msg_id}")
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -45,31 +51,45 @@ def handle_voice_message_in_background(event, audio_url):
         conn.commit()
         print("🗣️ תמלול הוכנס לשורה קיימת במסד")
     except Exception as e:
-        print("❌ שגיאה בעדכון תמלול:", e)
+        print("❌ שגיאה בעדכון תמלול למסד:", e)
         conn.rollback()
     finally:
         cursor.close()
         conn.close()
 
 def transcribe_audio_from_url(audio_url):
+    print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
     try:
-        headers = {'Authorization': f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"}
+        slack_token = os.getenv('SLACK_BOT_TOKEN')
+        if not slack_token:
+            print("🚫 SLACK_BOT_TOKEN לא מוגדר בסביבה")
+            return None
+
+        headers = {'Authorization': f"Bearer {slack_token}"}
         response = requests.get(audio_url, headers=headers)
+
+        print(f"📥 סטטוס הורדה: {response.status_code}")
+        print(f"📦 גודל תוכן שהתקבל: {len(response.content)} bytes")
+
         if response.status_code != 200:
             print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
             return None
 
         audio_file = BytesIO(response.content)
-        audio_file.name = "audio.m4a"
+        audio_file.name = "audio.m4a"  # פורמט שמתאים ל-Whisper
 
+        print("🔊 שולח קובץ ל-Whisper לתמלול...")
         transcript = openai.Audio.transcribe("whisper-1", audio_file, language="he")
+
+        print("✅ קיבלתי תגובה מ-Whisper")
         text = transcript.get("text", "")
         if not text:
+            print("⚠️ Whisper החזיר טקסט ריק")
             return "[לא זוהה דיבור בתמלול]"
         return text
 
     except Exception as e:
-        print("❌ שגיאה בתמלול:", e)
+        print("❌ חריג במהלך התמלול:", e)
         return "[שגיאה בתמלול]"
 
  #עד פה
@@ -246,13 +266,19 @@ def slack_events():
 
     # הוספה שאולי נמחק
     if event.get("type") == "message" and "files" in event:
-      for f in event["files"]:
-        if f.get("mimetype", "").startswith("audio/"):
-            audio_url = f.get("url_private")
+     for f in event["files"]:
+        mimetype = f.get("mimetype", "")
+        print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
 
-            # שמור הודעה ראשונית עם טקסט זמני [בתהליך תמלול]
+        if mimetype.startswith("audio/"):
+            audio_url = f.get("url_private")
+            print(f"🔗 קישור להורדה: {audio_url}")
+
+            message_id = event.get("client_msg_id") or event.get("ts")
+            print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
+
             df = pd.DataFrame([{
-                "id": event.get("client_msg_id") or event.get("ts"),
+                "id": message_id,
                 "event_type": "voice_message",
                 "user_id": event.get("user"),
                 "channel_id": event.get("channel"),
@@ -267,14 +293,13 @@ def slack_events():
             df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
             save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
-            # הרץ את התמלול ברקע
+            print("🚀 מפעיל תמלול קולית ברקע")
             threading.Thread(
                 target=handle_voice_message_in_background,
                 args=(event, audio_url),
                 daemon=True
             ).start()
 
-            print("🎙️ תמלול קולית נשלח לרקע")
             return "", 200
 
         # עד פה 
