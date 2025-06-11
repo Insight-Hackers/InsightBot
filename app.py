@@ -174,9 +174,9 @@ def slack_events():
     print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
-    
+
     if event.get("type") == "message" and "files" in event:
-    for f in event["files"]:
+     for f in event["files"]:
         if f.get("filetype") == "text" and f.get("mode") == "snippet":
             snippet_text = f.get("preview") or "[שגיאה בקריאת סניפט]"
             df = pd.DataFrame([{
@@ -259,7 +259,7 @@ def slack_events():
        item = event.get("item", {})
 
        df = pd.DataFrame([{
-           "id": event.get("event_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
+           "id": event.get("eve ז\nt_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
            "event_type": event.get("type"),
            "user_id": event.get("user"),
            "channel_id": item.get("channel"),
