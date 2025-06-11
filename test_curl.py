@@ -21,3 +21,4 @@ csv_data = csv_res.content.decode('utf-8').splitlines()
 total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
              for line in csv_data[1:]]
 pprint(total_csv)  # צב
+

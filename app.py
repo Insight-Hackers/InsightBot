@@ -9,6 +9,9 @@ import traceback
 from io import BytesIO
 import requests
 import threading
+import openai
+from openai import OpenAI
+
 
 
 app = Flask(__name__)
@@ -21,77 +24,78 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 # הוספה אם לא יעבוד נמחק
 
 
-# def handle_voice_message_in_background(event, audio_url):
-#     print("🎙 התחלת טיפול בהודעה קולית")
+def handle_voice_message_in_background(event, audio_url):
+    print("🎙 התחלת טיפול בהודעה קולית")
 
-#     transcription = transcribe_audio_from_url(audio_url)
-#     print(f"📄 תוצאה מהתמלול: {transcription}")
+    transcription = transcribe_audio_from_url(audio_url)
+    print(f"📄 תוצאה מהתמלול: {transcription}")
 
-#     if transcription is None:
-#         transcription = "[שגיאה בתמלול]"
+    if transcription is None:
+        transcription = "[שגיאה בתמלול]"
 
-#     msg_id = event.get("client_msg_id") or event.get("ts")
-#     print(f"🆔 מזהה הודעה לעדכון: {msg_id}")
+    msg_id = event.get("client_msg_id") or event.get("ts")
+    print(f"🆔 מזהה הודעה לעדכון: {msg_id}")
 
-#     conn = get_db_connection()
-#     cursor = conn.cursor()
-#     try:
-#         cursor.execute("""
-#             UPDATE slack_messages_raw
-#             SET text = %s, event_type = %s
-#             WHERE id = %s
-#         """, (
-#             transcription,
-#             "voice_message_transcribed",
-#             str(msg_id)
-#         ))
-#         conn.commit()
-#         print("🗣 תמלול הוכנס לשורה קיימת במסד")
-#     except Exception as e:
-#         print("❌ שגיאה בעדכון תמלול למסד:", e)
-#         conn.rollback()
-#     finally:
-#         cursor.close()
-#         conn.close()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE slack_messages_raw
+            SET text = %s, event_type = %s
+            WHERE id = %s
+        """, (
+            transcription,
+            "voice_message_transcribed",
+            str(msg_id)
+        ))
+        conn.commit()
+        print("🗣 תמלול הוכנס לשורה קיימת במסד")
+    except Exception as e:
+        print("❌ שגיאה בעדכון תמלול למסד:", e)
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 
-# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# def transcribe_audio_from_url(audio_url):
-#     print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
-#     try:
-#         slack_token = os.getenv('SLACK_BOT_TOKEN')
-#         if not slack_token:
-#             print("🚫 SLACK_BOT_TOKEN לא מוגדר")
-#             return "[שגיאה בתמלול - אין טוקן]"
+def transcribe_audio_from_url(audio_url):
+    print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
+    try:
+        slack_token = os.getenv('SLACK_BOT_TOKEN')
+        if not slack_token:
+            print("🚫 SLACK_BOT_TOKEN לא מוגדר")
+            return "[שגיאה בתמלול - אין טוקן]"
 
-#         headers = {'Authorization': f"Bearer {slack_token}"}
-#         response = requests.get(audio_url, headers=headers)
+        headers = {'Authorization': f"Bearer {slack_token}"}
+        response = requests.get(audio_url, headers=headers)
 
-#         print(f"📥 סטטוס הורדה: {response.status_code}")
-#         print(f"📦 גודל קובץ: {len(response.content)} bytes")
+        print(f"📥 סטטוס הורדה: {response.status_code}")
+        print(f"📦 גודל קובץ: {len(response.content)} bytes")
 
-#         if response.status_code != 200:
-#             print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
-#             return "[שגיאה בהורדה]"
+        if response.status_code != 200:
+            print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
+            return "[שגיאה בהורדה]"
 
-#         audio_file = BytesIO(response.content)
-#         audio_file.name = "audio.m4a"
+        audio_file = BytesIO(response.content)
+        audio_file.name = "audio.m4a"
 
-#         # כאן נכנסות בדיוק שלוש השורות שלך:
-#         transcript = client.audio.transcriptions.create(
-#             model="whisper-1",
-#             file=audio_file,
-#             language="he"
-#         )
-#         text = transcript.text
+        # כאן נכנסות בדיוק שלוש השורות שלך:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="he"
+        )
+        text = transcript.text
 
-#         print("✅ תמלול הושלם:", text)
-#         return text if text else "[לא זוהה דיבור בתמלול]"
+        print("✅ תמלול הושלם:", text)
+        return text if text else "[לא זוהה דיבור בתמלול]"
 
-#     except Exception as e:
-#         print("❌ חריג במהלך התמלול:", e)
-#         return "[שגיאה בתמלול]"
+    except Exception as e:
+        print("❌ חריג במהלך התמלול:", e)
+        return "[שגיאה בתמלול]"
+
 
 # ע ד פה
 
@@ -271,42 +275,42 @@ def slack_events():
                 return "", 200
 
     # הוספה שאולי נמחק
-    # if event.get("type") == "message" and "files" in event:
-    #  for f in event["files"]:
-    #     mimetype = f.get("mimetype", "")
-    #     print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
+    if event.get("type") == "message" and "files" in event:
+     for f in event["files"]:
+        mimetype = f.get("mimetype", "")
+        print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
 
-    #     if mimetype.startswith("audio/"):
-    #         audio_url = f.get("url_private")
-    #         print(f"🔗 קישור להורדה: {audio_url}")
+        if mimetype.startswith("audio/"):
+            audio_url = f.get("url_private")
+            print(f"🔗 קישור להורדה: {audio_url}")
 
-    #         message_id = event.get("client_msg_id") or event.get("ts")
-    #         print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
+            message_id = event.get("client_msg_id") or event.get("ts")
+            print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
 
-    #         df = pd.DataFrame([{
-    #             "id": message_id,
-    #             "event_type": "voice_message",
-    #             "user_id": event.get("user"),
-    #             "channel_id": event.get("channel"),
-    #             "text": "[בתהליך תמלול]",
-    #             "ts": float(event.get("ts", 0)),
-    #             "parent_id": None,
-    #             "is_list": False,
-    #             "list_items": None,
-    #             "num_list_items": 0,
-    #             "raw": json.dumps(event)
-    #         }])
-    #         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-    #         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+            df = pd.DataFrame([{
+                "id": message_id,
+                "event_type": "voice_message",
+                "user_id": event.get("user"),
+                "channel_id": event.get("channel"),
+                "text": "[בתהליך תמלול]",
+                "ts": float(event.get("ts", 0)),
+                "parent_id": None,
+                "is_list": False,
+                "list_items": None,
+                "num_list_items": 0,
+                "raw": json.dumps(event)
+            }])
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
-    #         print("🚀 מפעיל תמלול קולית ברקע")
-    #         threading.Thread(
-    #             target=handle_voice_message_in_background,
-    #             args=(event, audio_url),
-    #             daemon=True
-    #         ).start()
+            print("🚀 מפעיל תמלול קולית ברקע")
+            threading.Thread(
+                target=handle_voice_message_in_background,
+                args=(event, audio_url),
+                daemon=True
+            ).start()
 
-    #         return "", 200
+            return "", 200
 
             # עד פה
 
@@ -556,150 +560,7 @@ def github_webhook():
         print(f"⚠ אירוע לא מטופל: {event_type}")
 
     return "", 200
-    signature = request.headers.get('X-Hub-Signature-256')
-    payload = request.data
 
-    if not verify_signature(payload, signature):
-        print("❌ חתימת webhook שגויה - דחה את הבקשה")
-        abort(400, "Invalid signature")
-
-    event_type = request.headers.get("X-GitHub-Event")
-    data = request.json
-
-    print(f"📢 GitHub event received: {event_type}")
-
-    if event_type == "ping":
-        print("✅ Received ping event from GitHub")
-        return "", 200
-
-    elif event_type == "pull_request":
-        action = data.get("action", "")
-        pr = data.get("pull_request")
-        repository = data.get("repository", {})
-
-        print(f"📦 פעולה על Pull Request: {action}")
-
-        if pr:
-            df = pd.json_normalize([pr])
-            df['action'] = action
-
-            if 'id' not in df.columns:
-                if 'number' in df.columns:
-                    df['id'] = df['number'].astype(str)
-                else:
-                    print("⚠ PR בלי id או number - דילוג")
-                    return "", 400
-
-            df.rename(columns={
-                'user.login': 'user_id',
-                'repository.full_name': 'repository',
-                'html_url': 'url'
-            }, inplace=True)
-
-            if 'repository' not in df.columns and 'full_name' in repository:
-                df['repository'] = repository['full_name']
-
-            df = df.loc[:, ~df.columns.duplicated()]
-
-            for col in ['created_at', 'closed_at', 'merged_at']:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
-
-            df_filtered = filter_columns_for_table(df, 'github_prs_raw')
-            save_dataframe_to_db(df_filtered, 'github_prs_raw',
-                                 PRIMARY_KEYS['github_prs_raw'])
-            print(f"💾 PR #{pr.get('number', '')} ({action}) נשמר/עודכן במסד")
-
-    elif event_type == "issues":
-        issue = data.get("issue")
-        if issue:
-            df = pd.json_normalize([issue])
-
-            if 'id' not in df.columns:
-                if 'number' in df.columns:
-                    df['id'] = df['number'].astype(str)
-                else:
-                    print("⚠ Issue בלי id או number - דילוג")
-                    return "", 400
-
-            df.rename(columns={
-                'user.login': 'user_id',
-                'repository.full_name': 'repository',
-                'html_url': 'url'
-            }, inplace=True)
-
-            df = df.loc[:, ~df.columns.duplicated()]
-
-            for col in ['created_at', 'closed_at']:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
-
-            df_filtered = filter_columns_for_table(df, 'github_issues_raw')
-            save_dataframe_to_db(
-                df_filtered, 'github_issues_raw', PRIMARY_KEYS['github_issues_raw'])
-            print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
-
-    elif event_type == "push":
-        commits = data.get("commits", [])
-        repository = data.get("repository", {})
-        if commits:
-            df = pd.json_normalize(commits)
-
-            df.rename(columns={
-                'id': 'sha',
-                'author.name': 'author',
-                'message': 'message',
-                'timestamp': 'timestamp'
-            }, inplace=True)
-
-            df['repository'] = repository.get('full_name', '')
-            df['url'] = None
-
-            df = df.loc[:, ~df.columns.duplicated()]
-
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(
-                    df['timestamp'], errors='coerce')
-
-            df_filtered = filter_columns_for_table(df, 'github_commits_raw')
-            save_dataframe_to_db(
-                df_filtered, 'github_commits_raw', PRIMARY_KEYS['github_commits_raw'])
-            print(f"💾 נשמרו {len(df_filtered)} קומיטים במסד")
-
-    elif event_type == "pull_request_review":
-        review = data.get("review")
-        pr = data.get("pull_request", {})
-        if review:
-            df = pd.json_normalize([review])
-            pr_id = pr.get('id', None)
-            df['pull_request_id'] = str(pr_id) if pr_id is not None else None
-
-            if 'id' not in df.columns:
-                df['id'] = None
-
-            df.rename(columns={
-                'user.login': 'user_id',
-                'state': 'state',
-                'body': 'body',
-                'created_at': 'created_at',
-                'html_url': 'url'
-            }, inplace=True)
-
-            df = df.loc[:, ~df.columns.duplicated()]
-
-            if 'created_at' in df.columns:
-                df['created_at'] = pd.to_datetime(
-                    df['created_at'], errors='coerce')
-
-            df_filtered = filter_columns_for_table(df, 'github_reviews_raw')
-            save_dataframe_to_db(
-                df_filtered, 'github_reviews_raw', PRIMARY_KEYS['github_reviews_raw'])
-            print(f"💾 Review #{review.get('id', '')} נשמר במסד")
-
-    else:
-        print(f"⚠ אירוע לא מטופל: {event_type}")
-
-    return "", 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
