@@ -552,29 +552,6 @@ def github_webhook():
     return "", 200
 
 
-USE_MOCK = os.getenv("USE_MOCK", "true").lower() == "true"
-
-if not USE_MOCK:
-    from openai import OpenAI
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    if not OPENAI_API_KEY:
-        raise RuntimeError(
-            "OPENAI_API_KEY לא מוגדר, ולא ניתן לעבוד במצב production בלי מפתח.")
-    client = OpenAI(api_key=OPENAI_API_KEY)
-else:
-    print("⚠️ מצב MOCK פעיל – אין שימוש ב־OpenAI API")
-
-
-def ask_openai(prompt):
-    if USE_MOCK:
-        return f"🧪 תובנה דמוית GPT: {prompt[:30]}..."
-    else:
-        return client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
-        ).choices[0].message.content
-
-
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     print(f"✅ הקובץ app.py התחיל לרוץ ב-port {port}")
