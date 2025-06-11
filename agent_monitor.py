@@ -1,3 +1,9 @@
+
+
+
+
+
+
 import pandas as pd
 import re
 from datetime import datetime
@@ -333,7 +339,7 @@ def build_project_status_daily(github_prs_df, github_issues_df, all_users_df):
     if pd.isna(today):  # אם אין PRs בכלל, today יהיה NaT
         today = datetime.now().date()  # השתמש בתאריך היום
 
-    stale_threshold = pd.Timestamp(today) - pd.Timedelta(days=3)
+    stale_threshold = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=3)
     stale_prs = prs_df[(prs_df['state'] == 'open') & (
         pd.to_datetime(prs_df['created_at']) < stale_threshold)]
 
@@ -491,7 +497,9 @@ if __name__ == "__main__":
 
     try:
         # --- 1. טעינת כל ה-DataFrames הנדרשים ממסד הנתונים ---
-        slack_df = load_slack_messages()
+        from slack_deletion_sync import load_filtered_slack_messages
+        slack_df = load_filtered_slack_messages()
+
         print(f"📊 נטענו {len(slack_df)} הודעות מ-Slack")
 
         if slack_df.empty:
