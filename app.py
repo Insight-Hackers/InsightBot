@@ -12,7 +12,6 @@ import threading
 from openai import OpenAI
 
 
-
 app = Flask(__name__)
 
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
@@ -202,18 +201,19 @@ PRIMARY_KEYS = {
     'user_daily_summary': 'user_id',
 }
 slack_message_columns = [
-            "id",
-            "event_type",
-            "user_id",
-            "channel_id",
-            "text",
-            "ts",
-            "parent_id",
-            "is_list",
-            "list_items",
-            "num_list_items",
-            "raw"
-        ]
+    "id",
+    "event_type",
+    "user_id",
+    "channel_id",
+    "text",
+    "ts",
+    "parent_id",
+    "is_list",
+    "list_items",
+    "num_list_items",
+    "raw"
+]
+
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
@@ -241,7 +241,6 @@ def slack_events():
         is_list = bool(list_items)
         num_list_items = len(list_items) if list_items else 0
         # Define the columns for slack_messages_raw
-        
 
         df = pd.DataFrame([[
             event.get("client_msg_id") or event.get("ts"),
@@ -250,7 +249,8 @@ def slack_events():
             event.get("channel"),
             text,
             float(event.get("ts", 0)),
-            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            event.get("thread_ts") if event.get(
+                "thread_ts") != event.get("ts") else None,
             is_list,
             list_items,
             num_list_items,
@@ -286,7 +286,7 @@ def slack_events():
                     df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
                 print("📄 סניפט טקסט נשמר למסד")
                 return "", 200
-            
+
     # הוספה שאולי נמחק
     # if event.get("type") == "message" and "files" in event:
     #  for f in event["files"]:
@@ -398,14 +398,15 @@ def slack_events():
 
     df['raw'] = df.apply(lambda row: json.dumps(event), axis=1)
 
+    import re
+
     def extract_list_items(text):
         if not isinstance(text, str):
             return None
         lines = text.splitlines()
-        items = []
-        for line in lines:
-            if line.strip().startswith(("* ", "- ", "• ")):
-                items.append(line[2:].strip())
+        pattern = re.compile(r'^\s*[\*\-\•\d+\.]+\s*(.+)')
+        items = [match.group(1).strip()
+                 for line in lines if (match := pattern.match(line))]
         return items if items else None
 
     if 'text' in df.columns:
