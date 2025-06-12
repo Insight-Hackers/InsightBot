@@ -196,6 +196,14 @@ def slack_events():
     # print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
+    if (event.get("type") == "message" 
+        and event.get("subtype") == "file_share" and "files" in event and
+         event["files"][0].get("mimetype", "").startswith("audio/")):
+         mimetype = event["files"][0].get("mimetype", "")
+         print(f"🎙️ התקבלה הודעה קולית! סוג קובץ: {mimetype}")
+         
+         return "", 200
+
     if (event.get("type") == "message" and 
         event.get("subtype") == "file_share" and 
         "files" in event):
