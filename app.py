@@ -190,16 +190,19 @@ def get_user_email(user_id):
 def slack_events():
     data = request.json
     print("📥 Slack event received:")
-    print(json.dumps(data, indent=2))
+    # print(json.dumps(data, indent=2))
     
     event = data.get("event", {})
     if (event.get("type") == "message" and 
         event.get("subtype") == "file_share" and 
         "files" in event):
         
-        print("📋📎 YAFIT AND YAEL")
-
-        url = os.getenv("SLACK_FILE_URL")
+        print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
+        
+        url = event.get("files", [{}])[0].get("url_private_download")
+        if not url:
+            print("⚠️ לא נמצא URL להורדת הקובץ")
+            return "", 400
         api_token = os.getenv("api_token")
         headers = {
             'Authorization': f'Bearer {api_token}',
@@ -227,13 +230,17 @@ def slack_events():
             event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             True,
             total_csv,
-            res.json()["files"]["column_count"],
+            event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
             json.dumps(event)
         ]], columns=slack_message_columns)
         
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
         print("📋 Slack list saved to DB")
+        threading.Thread(
+            agent_monitor,
+            daemon=True,
+        ).start()
         
         return "", 200
     
