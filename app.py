@@ -88,6 +88,9 @@ def save_dataframe_to_db(df, table_name, pk_column):
                 INSERT INTO {table_name} ({cols}) VALUES ({placeholders})
                 ON CONFLICT ({pk_column}) DO UPDATE SET {update_cols}
             """
+            print("==============================================================")
+            print(sql)
+            print("==============================================================")
             cursor.execute(sql, tuple(row))
 
         conn.commit()
