@@ -95,6 +95,10 @@ def save_dataframe_to_db(df, table_name, pk_column):
 
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
+        threading.Thread(
+            agent_monitor,
+            daemon=True,
+        ).start()
         
            
     except Exception as e:
@@ -243,10 +247,7 @@ def slack_events():
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
         print("📋 Slack list saved to DB")
-        threading.Thread(
-            agent_monitor,
-            daemon=True,
-        ).start()
+       
         
         return "", 200
     
