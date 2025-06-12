@@ -237,7 +237,7 @@ def slack_events():
             True,
             json_data,
             event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
-            True
+            json.dumps({})
         ]], columns=slack_message_columns)
         
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
