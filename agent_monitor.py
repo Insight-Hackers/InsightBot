@@ -61,8 +61,12 @@ def load_filtered_github_prs():
     df = load_github_prs()
     last_ts = get_last_processed_time("github_prs_raw")
     if last_ts:
-        if last_ts.tzinfo is None:
-            last_ts = last_ts.tz_localize("UTC")
+        import pandas as pd  # ודא שזה קיים בראש הקובץ
+
+    if last_ts.tzinfo is None:
+        last_ts = pd.Timestamp(last_ts).tz_localize("UTC")
+    else:
+        last_ts = pd.Timestamp(last_ts)
 
         df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
