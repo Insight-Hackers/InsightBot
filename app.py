@@ -227,11 +227,11 @@ def slack_events():
             "list",
             email,
             event.get("channel"),
-            total_csv,
+            True,
             float(event.get("ts", 0)),
             event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             True,
-            total_csv,
+            True,
             event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
             json.dumps(event)
         ]], columns=slack_message_columns)
