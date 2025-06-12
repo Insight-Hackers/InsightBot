@@ -168,8 +168,9 @@ def save_dataframe_to_db(df, table_name, pk_column):
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
         monitor = agent_monitor()
-        monitor.main()
-           
+        from agent_monitor import agent_monitor
+        agent_monitor()
+
     except Exception as e:
         print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
         import traceback
@@ -305,15 +306,18 @@ def slack_events():
                     event.get("channel"),
                     total_csv,
                     float(event.get("ts", 0)),
-                    event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+                    event.get("thread_ts") if event.get(
+                        "thread_ts") != event.get("ts") else None,
                     True,
                     total_csv,
                     f["list_limits"]["row_count"],
                     json.dumps(event)
                 ]], columns=slack_message_columns)
 
-                df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-                save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                df_filtered = filter_columns_for_table(
+                    df, 'slack_messages_raw')
+                save_dataframe_to_db(
+                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
                 print("📋 Slack list saved to DB")
                 return "", 200
@@ -321,7 +325,7 @@ def slack_events():
     # ✉️ הודעת טקסט רגילה (כולל בדיקת רשימות)
     if event.get("type") == "message":
         text = event.get("text", "")
-                
+
         def extract_list_items(text):
             if not isinstance(text, str):
                 return None
@@ -344,7 +348,8 @@ def slack_events():
             event.get("channel"),
             text,
             float(event.get("ts", 0)),
-            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            event.get("thread_ts") if event.get(
+                "thread_ts") != event.get("ts") else None,
             is_list,
             list_items,
             num_list_items,
@@ -352,7 +357,8 @@ def slack_events():
         ]], columns=slack_message_columns)
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                             PRIMARY_KEYS['slack_messages_raw'])
 
         print("📝 הודעת טקסט רגילה נשמרה למסד (כולל בדיקת רשימה)")
         return "", 200
@@ -382,16 +388,15 @@ def slack_events():
                     df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
                 print("📄 סניפט טקסט נשמר למסד")
                 return "", 200
-   
 
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
         deleted_message = event.get("previous_message", {})
         user_id = deleted_message.get("user")
-        email= get_user_email(user_id) if user_id else None
+        email = get_user_email(user_id) if user_id else None
         df = pd.DataFrame([{
             "id": event.get("event_ts"),
             "event_type": "message_deleted",
-            "user_id":email,
+            "user_id": email,
             "channel_id": event.get("channel"),
             "text": deleted_message.get("text", "[לא נמצא טקסט]"),
             "ts": float(event.get("event_ts")),
@@ -411,7 +416,7 @@ def slack_events():
 
     if event.get("type") in ["reaction_added", "reaction_removed"]:
         item = event.get("item", {})
-        email= get_user_email(event.get("user"))
+        email = get_user_email(event.get("user"))
         df = pd.DataFrame([{
             "id": event.get("event_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
             "event_type": event.get("type"),
