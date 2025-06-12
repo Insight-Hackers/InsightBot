@@ -227,13 +227,13 @@ def slack_events():
             "list",
             email,
             event.get("channel"),
-            True,
+            total_csv,
             float(event.get("ts", 0)),
             event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             True,
-            True,
+            total_csv,
             event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
-            json.dumps(event)
+            True
         ]], columns=slack_message_columns)
         
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
