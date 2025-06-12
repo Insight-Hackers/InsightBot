@@ -8,7 +8,7 @@ import os
 import traceback
 from io import BytesIO
 import requests
-import threading #
+import threading
 from openai import OpenAI
 import re
 from dotenv import load_dotenv
@@ -22,7 +22,6 @@ GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
-
 
 
 def get_db_connection():
@@ -96,11 +95,10 @@ def save_dataframe_to_db(df, table_name, pk_column):
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
         threading.Thread(
-            agent_monitor,
-            daemon=True,
+            target=agent_monitor,
+            daemon=True
         ).start()
-        
-           
+
     except Exception as e:
         print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
         import traceback
@@ -198,14 +196,14 @@ def slack_events():
     data = request.json
     print("📥 Slack event received:")
     # print(json.dumps(data, indent=2))
-    
+
     event = data.get("event", {})
-    if (event.get("type") == "message" and 
-        event.get("subtype") == "file_share" and 
-        "files" in event):
-        
+    if (event.get("type") == "message" and
+        event.get("subtype") == "file_share" and
+            "files" in event):
+
         print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
-        
+
         url = event.get("files", [{}])[0].get("url_private_download")
         if not url:
             print("⚠️ לא נמצא URL להורדת הקובץ")
@@ -227,7 +225,7 @@ def slack_events():
         total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
                      for line in csv_data[1:]]
         json_data = json.dumps(total_csv, ensure_ascii=False)
-        print( total_csv)
+        print(total_csv)
         email = get_user_email(event.get("user"))
 
         df = pd.DataFrame([[
@@ -237,21 +235,22 @@ def slack_events():
             event.get("channel"),
             json_data,
             float(event.get("ts", 0)),
-            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            event.get("thread_ts") if event.get(
+                "thread_ts") != event.get("ts") else None,
             True,
             json_data,
-            event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
+            event.get("files", [{}])[0].get(
+                "list_limits", {}).get("row_count", 0),
             json.dumps({})
         ]], columns=slack_message_columns)
-        
+
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                             PRIMARY_KEYS['slack_messages_raw'])
         print("📋 Slack list saved to DB")
-       
-        
+
         return "", 200
-    
-    
+
     # 🎯 הודעה מסוג message עם קובץ רשימה
     if event.get("type") == "message" and "files" in event:
         print("📎 we are clever")
@@ -468,7 +467,6 @@ def slack_events():
     print("✅ Slack message נשמר למסד")
 
     return "", 200
-
 
 
 @app.route("/github/webhook", methods=["POST"])
