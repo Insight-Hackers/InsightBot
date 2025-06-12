@@ -9,6 +9,25 @@ from thefuzz import fuzz
 from datetime import date
 import time
 
+import os
+
+LAST_PROCESSED_FILE = "last_processed.txt"
+
+def get_last_processed_date():
+    """קורא את התאריך האחרון שטופל מקובץ (אם קיים)."""
+    if os.path.exists(LAST_PROCESSED_FILE):
+        with open(LAST_PROCESSED_FILE, "r") as f:
+            try:
+                return datetime.fromisoformat(f.read().strip()).date()
+            except Exception as e:
+                print(f"⚠ שגיאה בקריאת תאריך אחרון: {e}")
+    return None  # אם לא נמצא תאריך קודם
+
+def set_last_processed_date(date_obj):
+    """שומר את התאריך האחרון שטופל לקובץ טקסט."""
+    with open(LAST_PROCESSED_FILE, "w") as f:
+        f.write(date_obj.isoformat())
+
 # --- פונקציות חיבורים לדאטא בייס ---
 
 
@@ -36,6 +55,27 @@ def load_slack_messages():
         return df
     finally:
         conn.close()
+
+def load_filtered_slack_messages():
+    """טוען הודעות Slack מסוננות לפי התאריך האחרון שטופל ומסנן הודעות שנמחקו."""
+    df = load_slack_messages()
+    last_date = get_last_processed_date()
+
+    if last_date:
+        # המרת timestamp ל־datetime ואז ל־date
+        df['ts_date'] = pd.to_datetime(df['ts'], unit='s').dt.date
+        df = df[df['ts_date'] > last_date].copy()
+        print(f"🧹 סוננו הודעות לפני {last_date} - נותרו {len(df)}")
+        df = df.drop(columns=['ts_date'])
+
+    # סינון הודעות שנמחקו
+    if 'deleted' in df.columns:
+        before = len(df)
+        df = df[df['deleted'] != True].copy()
+        print(f"🗑 סוננו {before - len(df)} הודעות שנמחקו")
+
+    return df
+
 
 
 def load_slack_reports():
@@ -313,37 +353,36 @@ def analyze_reviews(github_reviews_df):
 
 
 def build_user_daily_summary(slack_df, replies_df, slack_reports_df,
-                             github_commits_df, github_reviews_df, github_issues_df):
-    """בנאי סיכום יומי עבור כל משתמש על בסיס כל הנתונים המנותחים."""
+                             github_commits_df, github_reviews_df,
+                             github_issues_df, github_prs_df):
+    """בנאי סיכום יומי עבור כל משתמש על בסיס כל הנתונים המנותחים, כולל PR נפרד."""
     dfs = [
         analyze_total_messages(slack_df),
         analyze_help_requests_count(slack_df),
-        analyze_stuck_status(slack_df, replies_df,
-                             slack_reports_df, github_issues_df),
+        analyze_stuck_status(slack_df, replies_df, slack_reports_df, github_issues_df),
         analyze_completed_tasks(github_issues_df),
         analyze_open_tasks(github_issues_df),
         analyze_commits(github_commits_df),
-        analyze_reviews(github_reviews_df)
+        analyze_reviews(github_reviews_df),
+        analyze_pull_requests(github_prs_df)  # ✅ נוספה העמודה pull_requests
     ]
 
-    # מיזוג כל ה-DataFrames לרפדא אחד גדול
+    # מיזוג כל הטבלאות לפי user_id + date
     user_summary_df = reduce(
-        lambda left, right: pd.merge(
-            left, right, on=['user_id', 'date'], how='outer'),
+        lambda left, right: pd.merge(left, right, on=['user_id', 'date'], how='outer'),
         dfs
-    ).fillna(0)  # מילוי ערכים חסרים (NaN) באפס
+    ).fillna(0)
 
-    # המרת עמודות מספריות ל-integer
+    # המרת עמודות מספריות ל־int
     for col in user_summary_df.columns:
         if col not in ['user_id', 'date']:
             user_summary_df[col] = user_summary_df[col].astype(int)
 
-    # שינוי שם העמודה 'date' ל-'day'
-    user_summary_df = user_summary_df.rename(columns={
-        'date': 'day'
-    })
+    # שינוי שם 'date' ל־'day'
+    user_summary_df = user_summary_df.rename(columns={'date': 'day'})
 
     return user_summary_df
+
 
 # --- יצירת טבלת project_status_daily ---
 
@@ -511,6 +550,7 @@ def load_github_commits():
     conn.close()
     return df
 
+
 # ============================
 # 🧪 MAIN DEMO - הרצת דמו מלאה
 # ============================
@@ -520,6 +560,8 @@ def agent_monitor():
     print("🚀 מתחיל לנתח נתונים מ־Supabase...")
     time.sleep(10)
     try:
+
+
         # --- 1. טעינת כל ה-DataFrames הנדרשים ממסד הנתונים ---
         from slack_deletion_sync import load_filtered_slack_messages
         slack_df = load_filtered_slack_messages()
@@ -546,13 +588,24 @@ def agent_monitor():
         print(f"📊 נטענו {len(github_commits_df)} קומיטים מ-GitHub")
         print(f"📊 נטענו {len(github_reviews_df)} ביקורות מ-GitHub")
         print(f"📊 נטענו {len(github_prs_df)} בקשות משיכה מ-GitHub")
-
         # --- 2. ביצוע הניתוח ---
         print("🔍 מבצע ניתוח נתונים...")
         user_summary_df = build_user_daily_summary(
-            slack_df, replies_df, slack_reports_df,
-            github_commits_df, github_reviews_df, github_issues_df
+            slack_df,
+            replies_df,
+            slack_reports_df,
+            github_commits_df,
+            github_reviews_df,
+            github_issues_df,
+            github_prs_df
         )
+
+        # --- 3. עדכון תאריך אחרון שטופל (לפני שמירה) ---
+        if not user_summary_df.empty:
+            latest_date = user_summary_df['day'].max()
+            set_last_processed_date(latest_date)
+            print(f"🕓 נשמר תאריך אחרון שטופל: {latest_date}")
+
 
         project_status_daily_df = build_project_status_daily(
             github_prs_df, github_issues_df, user_summary_df
@@ -572,12 +625,6 @@ def agent_monitor():
 
         # --- 4. שמירה למסד הנתונים ---
         print("\n💾 שומר נתונים למסד הנתונים...")
-       # --- 2. ביצוע הניתוח ---
-        print("🔍 מבצע ניתוח נתונים...")
-        user_summary_df = build_user_daily_summary(
-            slack_df, replies_df, slack_reports_df,
-            github_commits_df, github_reviews_df, github_issues_df
-        )
 
 # ✅ הוספת בדיקות לפני שמירה:
         print("✅ טיפוסים:")
@@ -603,6 +650,7 @@ def agent_monitor():
         print(f"❌ שגיאה כללית: {e}")
         import traceback
         traceback.print_exc()
+    
 
 
 # אם מריצים את הקובץ ישירות, הפעל את הפונקציה
