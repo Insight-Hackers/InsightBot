@@ -395,11 +395,18 @@ def slack_events():
 
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
         deleted_message = event.get("previous_message", {})
-
+        user_id = deleted_message.get("user")
+        api_token = os.getenv("api_token")
+        res = requests.get(
+             "https://slack.com/api/users.info",
+              headers={"Authorization": f"Bearer {api_token}"},
+              params={"user": user_id}
+     )
+        
         df = pd.DataFrame([{
             "id": event.get("event_ts"),
             "event_type": "message_deleted",
-            "user_id": deleted_message.get("user"),
+            "user_id": data["user"]["profile"].get("email"),
             "channel_id": event.get("channel"),
             "text": deleted_message.get("text", "[לא נמצא טקסט]"),
             "ts": float(event.get("event_ts")),

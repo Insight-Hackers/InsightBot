@@ -38,29 +38,3 @@ slack_message_columns = [
             "num_list_items",
             "raw"
         ]
-PRIMARY_KEYS = {
-    'slack_messages_raw': 'id',
-    'alerts': 'id',
-    'github_commits_raw': 'sha',
-    'github_issues_raw': 'id',
-    'github_prs_raw': 'id',
-    'github_reviews_raw': 'id',
-    'slack_reports_raw': 'id',
-    # Composite key in DB, כאן עשוי להיות צורך בהתאמה מיוחדת
-    'user_daily_summary': 'user_id',
-}
-df = pd.DataFrame([[
-            res.json().get("client_msg_id") or res.json().get("ts"),
-            "list",
-            res.json().get("user"),
-            res.json().get("channel"),
-            total_csv,
-            float(res.json().get("ts", 0)),
-            res.json().get("parent_id")if res.json().get("parent_id") else None,
-            True,
-            total_csv,
-            res.json()["files"][0]["list_limits"]["row_count"],
-            res.json()
-        ]], columns=slack_message_columns)
-
-app.save_dataframe_to_db(df, "slack_messages_raw",PRIMARY_KEYS['slack_messages_raw'])
