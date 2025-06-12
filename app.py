@@ -14,6 +14,8 @@ import re
 from dotenv import load_dotenv
 from agent_monitor import agent_monitor
 
+load_dotenv()
+
 app = Flask(__name__)
 
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
