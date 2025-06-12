@@ -167,8 +167,7 @@ def save_dataframe_to_db(df, table_name, pk_column):
 
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
-        monitor = agent_monitor()
-        from agent_monitor import agent_monitor
+
         agent_monitor()
 
     except Exception as e:
