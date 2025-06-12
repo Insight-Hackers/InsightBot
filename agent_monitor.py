@@ -24,6 +24,7 @@ SLACK_TO_GIT_USERNAME_MAP = {
     "y7697086@gmail.com": "yaelshneor2004"
 }
 
+
 def get_canonical_username(slack_email: str = None, git_username: str = None) -> str:
     if slack_email and slack_email in SLACK_TO_GIT_USERNAME_MAP:
         return SLACK_TO_GIT_USERNAME_MAP[slack_email]
@@ -31,11 +32,13 @@ def get_canonical_username(slack_email: str = None, git_username: str = None) ->
         return git_username
     return None
 
+
 def add_canonical_user_column(df: pd.DataFrame, slack_col: str = "user_id", git_col: str = "author") -> pd.DataFrame:
     def map_user(row):
         return get_canonical_username(row.get(slack_col), row.get(git_col))
     df["canonical_username"] = df.apply(map_user, axis=1)
     return df
+
 
 def load_filtered_github_commits():
     df = load_github_commits()
@@ -69,7 +72,6 @@ def load_filtered_github_issues():
     return df
 
 
-
 def load_filtered_github_reviews():
     df = load_github_reviews()
     last_ts = get_last_processed_time("github_reviews_raw")
@@ -89,18 +91,17 @@ def load_filtered_github_reviews():
 def load_filtered_github_prs():
     df = load_github_prs()
     last_ts = get_last_processed_time("github_prs_raw")
-    if last_ts:
-        import pandas as pd  # ודא שזה קיים בראש הקובץ
 
-    if last_ts.tzinfo is None:
-        last_ts = pd.Timestamp(last_ts).tz_localize("UTC")
-    else:
+    if last_ts is not None:
         last_ts = pd.Timestamp(last_ts)
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.tz_localize("UTC")
 
         df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו PRs לפני {last_ts} - נותרו {len(df)}")
+
     return df
 
 
@@ -176,11 +177,10 @@ def load_filtered_slack_messages():
         df = df[df['deleted'] != True].copy()
         print(f"🗑 סוננו {before - len(df)} הודעות שנמחקו")
         replies_df = add_canonical_user_column(replies_df, slack_col="user_id")
-        slack_reports_df = add_canonical_user_column(slack_reports_df, slack_col="user_id")
-   
+        slack_reports_df = add_canonical_user_column(
+            slack_reports_df, slack_col="user_id")
+
     return df
-
-
 
 
 def load_slack_reports():
@@ -651,11 +651,11 @@ def save_dataframe_to_db(df, table_name, conflict_columns=None):
         conn.close()
 
 
-#def load_github_commits():
-    #conn = get_db_connection()
-    #df = pd.read_sql("SELECT * FROM github_commits_raw", conn)
-    #conn.close()
-    #return df
+# def load_github_commits():
+    # conn = get_db_connection()
+    # df = pd.read_sql("SELECT * FROM github_commits_raw", conn)
+    # conn.close()
+    # return df
 
 
 # ============================
@@ -693,13 +693,18 @@ def agent_monitor():
         print(f"📊 נטענו {len(github_commits_df)} קומיטים מ-GitHub")
         print(f"📊 נטענו {len(github_reviews_df)} ביקורות מ-GitHub")
         print(f"📊 נטענו {len(github_prs_df)} בקשות משיכה מ-GitHub")
-        github_commits_df = add_canonical_user_column(github_commits_df, git_col="author")
-        github_reviews_df = add_canonical_user_column(github_reviews_df, git_col="user_id")
-        github_issues_df = add_canonical_user_column(github_issues_df, git_col="user_id")
-        github_prs_df = add_canonical_user_column(github_prs_df, git_col="user_id")
+        github_commits_df = add_canonical_user_column(
+            github_commits_df, git_col="author")
+        github_reviews_df = add_canonical_user_column(
+            github_reviews_df, git_col="user_id")
+        github_issues_df = add_canonical_user_column(
+            github_issues_df, git_col="user_id")
+        github_prs_df = add_canonical_user_column(
+            github_prs_df, git_col="user_id")
         slack_df = add_canonical_user_column(slack_df, slack_col="user_id")
         replies_df = add_canonical_user_column(replies_df, slack_col="user_id")
-        slack_reports_df = add_canonical_user_column(slack_reports_df, slack_col="user_id")
+        slack_reports_df = add_canonical_user_column(
+            slack_reports_df, slack_col="user_id")
 
         # --- 2. ביצוע הניתוח ---
         print("🔍 מבצע ניתוח נתונים...")
@@ -773,7 +778,8 @@ def agent_monitor():
 
         assert user_summary_df['day'].apply(
             lambda d: isinstance(d, date)).all(), "❌ טיפוס שגוי ב-day"
-        assert user_summary_df['canonical_username'].notna().all(), "❌ user_id חסר"
+        assert user_summary_df['canonical_username'].notna(
+        ).all(), "❌ user_id חסר"
 
 # המשך שמירה
         save_dataframe_to_db(
