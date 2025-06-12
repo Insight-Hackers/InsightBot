@@ -397,6 +397,7 @@ def slack_events():
         deleted_message = event.get("previous_message", {})
         user_id = deleted_message.get("user")
         api_token = os.getenv("api_token")
+        
         res = requests.get(
              "https://slack.com/api/users.info",
               headers={"Authorization": f"Bearer {api_token}"},
