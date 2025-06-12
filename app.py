@@ -194,8 +194,6 @@ def slack_events():
     # yafit
     event = data.get("event", {})
     if (event.get("type") == "message" and event.get("subtype") == "file_share" and "files" in event):
-      for f in event["files"]:
-         if f.get("filetype") == "list" and f.get("mode") == "list":
              print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
              # 👇 כאן תכתבי את הקוד שיטפל בזה
              return "", 200
