@@ -12,7 +12,7 @@ import threading
 from openai import OpenAI
 import re
 from dotenv import load_dotenv
-from agent_monitor import AgentMonitor
+from agent_monitor import agent_monitor
 
 app = Flask(__name__)
 
@@ -167,7 +167,7 @@ def save_dataframe_to_db(df, table_name, pk_column):
 
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
-        monitor = AgentMonitor()
+        monitor = agent_monitor()
         monitor.main()
            
     except Exception as e:
