@@ -254,15 +254,18 @@ def slack_events():
                     event.get("channel"),
                     total_csv,
                     float(event.get("ts", 0)),
-                    event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+                    event.get("thread_ts") if event.get(
+                        "thread_ts") != event.get("ts") else None,
                     True,
                     total_csv,
                     f["list_limits"]["row_count"],
                     json.dumps(event)
                 ]], columns=slack_message_columns)
 
-                df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-                save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                df_filtered = filter_columns_for_table(
+                    df, 'slack_messages_raw')
+                save_dataframe_to_db(
+                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
                 print("📋 Slack list saved to DB")
                 return "", 200
 
@@ -281,8 +284,10 @@ def slack_events():
                     "num_list_items": 0,
                     "raw": json.dumps(event)
                 }])
-                df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-                save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                df_filtered = filter_columns_for_table(
+                    df, 'slack_messages_raw')
+                save_dataframe_to_db(
+                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
                 print("📄 Text snippet saved to DB")
                 return "", 200
 
@@ -308,7 +313,8 @@ def slack_events():
             event.get("channel"),
             text,
             float(event.get("ts", 0)),
-            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            event.get("thread_ts") if event.get(
+                "thread_ts") != event.get("ts") else None,
             is_list,
             list_items,
             num_list_items,
@@ -316,7 +322,8 @@ def slack_events():
         ]], columns=slack_message_columns)
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
+                             PRIMARY_KEYS['slack_messages_raw'])
         print("📝 הודעת טקסט רגילה נשמרה למסד (כולל בדיקת רשימה)")
         return "", 200
 
@@ -338,8 +345,10 @@ def slack_events():
                     "num_list_items": 0,
                     "raw": json.dumps(event)
                 }])
-                df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-                save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                df_filtered = filter_columns_for_table(
+                    df, 'slack_messages_raw')
+                save_dataframe_to_db(
+                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
                 print("📄 סניפט טקסט נשמר למסד")
                 return "", 200
     # הוספה שאולי נמחק
@@ -542,33 +551,46 @@ def github_webhook():
             return "", 200
 
     elif event_type == "issues":
-        issue = data.get("issue")
-        if issue:
-            df = pd.json_normalize([issue])
+        action = data.get("action", "")
+        issue = data.get("issue", {})
+        repository = data.get("repository", {})
 
-            if 'id' not in df.columns:
-                if 'number' in df.columns:
-                    df['id'] = df['number'].astype(str)
-                else:
-                    print("⚠ Issue בלי id או number - דילוג")
-                    return "", 400
+        print(f"📌 פעולה על Issue: {action}")
 
-            df.rename(columns={
-                'user.login': 'user_id',
-                'repository.full_name': 'repository',
-                'html_url': 'url'
-            }, inplace=True)
+        if not issue:
+            print("⚠ אין מידע על issue באירוע - דילוג")
+            return "", 200
 
-            df = df.loc[:, ~df.columns.duplicated()]
+        df = pd.json_normalize([issue])
+        df['action'] = action
 
-            for col in ['created_at', 'closed_at']:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
+        if 'id' not in df.columns:
+            if 'number' in issue:
+                df['id'] = str(issue['number'])
+            else:
+                print("⚠ Issue בלי id או number - דילוג")
+                return "", 400
 
-            df_filtered = filter_columns_for_table(df, 'github_issues_raw')
-            save_dataframe_to_db(
-                df_filtered, 'github_issues_raw', PRIMARY_KEYS['github_issues_raw'])
-            print(f"💾 Issue #{issue.get('number', '')} נשמר במסד")
+        df.rename(columns={
+            'user.login': 'user_id',
+            'repository.full_name': 'repository',
+            'html_url': 'url'
+        }, inplace=True)
+
+        if 'repository' not in df.columns and 'full_name' in repository:
+            df['repository'] = repository['full_name']
+
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        for col in ['created_at', 'closed_at']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        df_filtered = filter_columns_for_table(df, 'github_issues_raw')
+        save_dataframe_to_db(df_filtered, 'github_issues_raw',
+                             PRIMARY_KEYS['github_issues_raw'])
+        print(f"💾 Issue #{issue.get('number', '')} ({action}) נשמר למסד")
+        return "", 200
 
     elif event_type == "push":
         commits = data.get("commits", [])
