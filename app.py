@@ -88,9 +88,7 @@ def save_dataframe_to_db(df, table_name, pk_column):
                 INSERT INTO {table_name} ({cols}) VALUES ({placeholders})
                 ON CONFLICT ({pk_column}) DO UPDATE SET {update_cols}
             """
-            print("==============================================================")
-            print(sql)
-            print("==============================================================")
+            
             cursor.execute(sql, tuple(row))
 
         conn.commit()
@@ -200,6 +198,14 @@ def slack_events():
     # print(json.dumps(data, indent=2))
     
     event = data.get("event", {})
+    if (event.get("type") == "message" 
+        and event.get("subtype") == "file_share" and "files" in event and
+         event["files"][0].get("mimetype", "").startswith("audio/")):
+         mimetype = event["files"][0].get("mimetype", "")
+         print(f"🎙️ התקבלה הודעה קולית! סוג קובץ: {mimetype}")
+         
+         return "", 200
+
     if (event.get("type") == "message" and 
         event.get("subtype") == "file_share" and 
         "files" in event):
