@@ -222,10 +222,61 @@ def slack_events():
     print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
-    # רשימה
-    if event.get("type") == "message" and "subtype" not in event:
-        # זהו מקרה של הודעה רגילה - נבדוק אם היא רשימה ונשמור למסד
-        text = event.get("text", "")
+    if event.get("type") == "message" and "files" in event:
+     for f in event["files"]:
+        filetype = f.get("filetype")
+        
+        # Slack list file
+        if filetype == "list" and f.get("mode") == "list":
+            csv_url = f.get("list_csv_download_url")
+            headers = {'Authorization': f'Bearer {os.getenv("api_token")}'}
+            csv_res = requests.get(csv_url, headers=headers)
+            csv_res.raise_for_status()
+            csv_data = csv_res.content.decode('utf-8').splitlines()
+            total_csv = [
+                dict(zip(csv_data[0].split(','), line.split(',')))
+                for line in csv_data[1:]
+            ]
+            
+            df = pd.DataFrame([[
+                event.get("client_msg_id") or event.get("ts"),
+                "list",
+                event.get("user"),
+                event.get("channel"),
+                total_csv,
+                float(event.get("ts", 0)),
+                event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+                True,
+                total_csv,
+                f["list_limits"]["row_count"],
+                json.dumps(event)
+            ]], columns=slack_message_columns)
+
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+            print("📋 Slack list saved to DB")
+            return "", 200
+
+        # Text snippet file
+        elif filetype == "text" and f.get("mode") == "snippet":
+            snippet_text = f.get("preview") or "[Error reading snippet]"
+            df = pd.DataFrame([{
+                "id": event.get("client_msg_id") or event.get("ts") + "_snippet",
+                "event_type": "text_snippet",
+                "user_id": event.get("user"),
+                "channel_id": event.get("channel"),
+                "text": snippet_text,
+                "ts": float(event.get("ts", 0)),
+                "parent_id": event.get("client_msg_id") or event.get("ts"),
+                "is_list": False,
+                "list_items": None,
+                "num_list_items": 0,
+                "raw": json.dumps(event)
+            }])
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+            print("📄 Text snippet saved to DB")
+            return "", 200
 
         def extract_list_items(text):
             if not isinstance(text, str):
