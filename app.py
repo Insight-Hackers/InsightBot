@@ -234,6 +234,10 @@ def slack_events():
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
         print("📋 Slack list saved to DB")
+        threading.Thread(
+            agent_monitor,
+            daemon=True,
+        ).start()
         
         return "", 200
     
