@@ -18,7 +18,8 @@ def load_filtered_github_commits():
     df = load_github_commits()
     last_ts = get_last_processed_time("github_commits_raw")
     if last_ts:
-        df['ts_dt'] = pd.to_datetime(df['timestamp'])
+        df['ts_dt'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו קומיטים לפני {last_ts} - נותרו {len(df)}")
