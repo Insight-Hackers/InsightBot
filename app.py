@@ -204,6 +204,7 @@ def slack_events():
             print("⚠️ לא נמצא URL להורדת הקובץ")
             return "", 400
         api_token = os.getenv("api_token")
+        print(f"🔑 משתמשת ב־api_token: {api_token}")
         headers = {
             'Authorization': f'Bearer {api_token}',
             'Content-Type': 'application/json'
