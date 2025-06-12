@@ -10,6 +10,7 @@ from io import BytesIO
 import requests
 import threading
 from openai import OpenAI
+import re
 from dotenv import load_dotenv
 
 app = Flask(__name__)
@@ -312,8 +313,12 @@ def slack_events():
 
                 print("📋 Slack list saved to DB")
                 return "", 200
-            
-    def extract_list_items(text):
+
+    # ✉️ הודעת טקסט רגילה (כולל בדיקת רשימות)
+    if event.get("type") == "message":
+        text = event.get("text", "")
+                
+        def extract_list_items(text):
             if not isinstance(text, str):
                 return None
             lines = text.splitlines()
@@ -323,10 +328,6 @@ def slack_events():
                     items.append(line[2:].strip())
             return items if items else None
 
-
-    # ✉️ הודעת טקסט רגילה (כולל בדיקת רשימות)
-    if event.get("type") == "message":
-        text = event.get("text", "")
         list_items = extract_list_items(text)
         is_list = bool(list_items)
         num_list_items = len(list_items) if list_items else 0
@@ -450,8 +451,6 @@ def slack_events():
         df['ts'] = pd.to_numeric(df['ts'], errors='coerce')
 
     df['raw'] = df.apply(lambda row: json.dumps(event), axis=1)
-
-    import re
 
     def extract_list_items(text):
         if not isinstance(text, str):
