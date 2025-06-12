@@ -197,7 +197,7 @@ def slack_events():
         event.get("subtype") == "file_share" and 
         "files" in event):
         
-        print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
+        print("📋📎 YAFIT AND YAEL")
 
         url = os.getenv("SLACK_FILE_URL")
         api_token = os.getenv("api_token")
