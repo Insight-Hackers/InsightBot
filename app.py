@@ -215,19 +215,19 @@ def slack_events():
             with open("temp_audio.mp3", "wb") as f:
                 f.write(audio_response.content)
 
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+            openai.api_key = os.getenv("OPENAI_API_KEY")
             try:
-               with open("temp_audio.mp3", "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file
+                with open("temp_audio.mp3", "rb") as audio_file:
+                    transcript = openai.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file
                 )
                 text = transcript.text
                 print("📝 תמלול מהקול:", text)
             except Exception as e:
                 print("❌ שגיאה בתמלול:", e)
                 text = "[שגיאה בתמלול]"
+
 
             email = get_user_email(event.get("user"))
             df = pd.DataFrame([[
