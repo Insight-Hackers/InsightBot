@@ -215,8 +215,7 @@ slack_message_columns = [
     "num_list_items",
     "raw"
 ]
-import os
-import requests
+
 def extract_list_items(text):
             if not isinstance(text, str):
                 return None
