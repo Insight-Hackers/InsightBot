@@ -197,9 +197,12 @@ def slack_events():
         event.get("subtype") == "file_share" and 
         "files" in event):
         
-        print("📋📎 YAFIT AND YAEL")
-
-        url = os.getenv("SLACK_FILE_URL")
+        print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
+        
+        url = event.get("files", [{}])[0].get("url_private_download")
+        if not url:
+            print("⚠️ לא נמצא URL להורדת הקובץ")
+            return "", 400
         api_token = os.getenv("api_token")
         headers = {
             'Authorization': f'Bearer {api_token}',
