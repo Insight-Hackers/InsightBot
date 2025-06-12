@@ -215,17 +215,48 @@ slack_message_columns = [
     "num_list_items",
     "raw"
 ]
+import os
+import requests
+
 def get_user_email(user_id):
     slack_token = os.getenv("api_token")
+    if not slack_token:
+        print("❌ לא נמצא api_token בקובץ .env")
+        return None
+
     url = f"https://slack.com/api/users.info?user={user_id}"
     headers = {
         "Authorization": f"Bearer {slack_token}"
     }
+
+    print(f"📡 שולחת בקשה ל-Slack עבור המשתמש: {user_id}")
     res = requests.get(url, headers=headers)
-    data = res.json()
-    if data.get("ok") and data.get("user", {}).get("profile", {}).get("email"):
-        return data["user"]["profile"]["email"]
-    return None
+
+    try:
+        data = res.json()
+        print("📥 תגובה מה-API:", data)
+    except Exception as e:
+        print("⚠️ שגיאה בפיענוח JSON:", e)
+        return None
+
+    if not data.get("ok"):
+        print(f"⚠️ Slack החזיר שגיאה: {data.get('error')}")
+        return None
+
+    if "user" not in data:
+        print("⚠️ מפתח 'user' לא קיים בתגובה מ-Slack")
+        return None
+
+    profile = data["user"].get("profile", {})
+    email = profile.get("email")
+
+    if not email:
+        print(f"ℹ️ לא נמצא אימייל עבור המשתמש {user_id}")
+    else:
+        print(f"✅ נמצא אימייל: {email} עבור המשתמש {user_id}")
+
+    return email
+
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
