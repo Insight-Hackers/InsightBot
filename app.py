@@ -218,6 +218,7 @@ def slack_events():
         csv_data = csv_res.content.decode('utf-8').splitlines()
         total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
                      for line in csv_data[1:]]
+        print( total_csv)
         email = get_user_email(event.get("user"))
 
         df = pd.DataFrame([[
