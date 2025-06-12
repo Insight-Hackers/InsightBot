@@ -783,7 +783,11 @@ def agent_monitor():
 
 # המשך שמירה
         save_dataframe_to_db(
-            user_summary_df, 'user_daily_summary', conflict_columns=['canonical_username', 'day'])
+            user_summary_df.rename(
+                columns={"canonical_username": "user_id"}),  # שינוי שם בעותק
+            'user_daily_summary',
+            conflict_columns=['user_id', 'day']
+        )
 
         save_dataframe_to_db(project_status_daily_df, 'project_status_daily')
         save_dataframe_to_db(alerts_df, 'alerts')
