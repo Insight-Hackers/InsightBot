@@ -508,36 +508,38 @@ def github_webhook():
 
         print(f"📦 פעולה על Pull Request: {action}")
 
-        if pr:
-            df = pd.json_normalize([pr])
-            df['action'] = action
+        if not pr:
+            print("⚠ אין מידע על pull_request באירוע - דילוג")
+            return "", 200  # או return "", 400 אם אתה רוצה לתעד חריגה
 
-            if 'id' not in df.columns:
-                if 'number' in df.columns:
-                    df['id'] = df['number'].astype(str)
-                else:
-                    print("⚠ PR בלי id או number - דילוג")
-                    return "", 400
+        df = pd.json_normalize([pr])
+        df['action'] = action
 
-            df.rename(columns={
-                'user.login': 'user_id',
-                'repository.full_name': 'repository',
-                'html_url': 'url'
-            }, inplace=True)
+        if 'id' not in df.columns:
+            df['id'] = df.get('number', [None])[0]
+            if df['id'].isna().all():
+                print("⚠ PR בלי id או number - דילוג")
+                return "", 400
 
-            if 'repository' not in df.columns and 'full_name' in repository:
-                df['repository'] = repository['full_name']
+        df.rename(columns={
+            'user.login': 'user_id',
+            'repository.full_name': 'repository',
+            'html_url': 'url'
+        }, inplace=True)
 
-            df = df.loc[:, ~df.columns.duplicated()]
+        if 'repository' not in df.columns and 'full_name' in repository:
+            df['repository'] = repository['full_name']
 
-            for col in ['created_at', 'closed_at', 'merged_at']:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
+        for col in ['created_at', 'closed_at', 'merged_at']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
 
             df_filtered = filter_columns_for_table(df, 'github_prs_raw')
             save_dataframe_to_db(df_filtered, 'github_prs_raw',
                                  PRIMARY_KEYS['github_prs_raw'])
+
             print(f"💾 PR #{pr.get('number', '')} ({action}) נשמר/עודכן במסד")
+            return "", 200
 
     elif event_type == "issues":
         issue = data.get("issue")
