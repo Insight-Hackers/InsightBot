@@ -232,7 +232,7 @@ def slack_events():
 
         df = pd.DataFrame([[
             event.get("client_msg_id") or event.get("ts"),
-            "list",
+            "message",
             email,
             event.get("channel"),
             json_data,
