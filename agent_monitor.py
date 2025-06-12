@@ -18,8 +18,11 @@ def load_filtered_github_commits():
     df = load_github_commits()
     last_ts = get_last_processed_time("github_commits_raw")
     if last_ts:
-        df['ts_dt'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+        # הפוך את last_ts ל־UTC אם צריך
+        if last_ts.tzinfo is None:
+            last_ts = pd.Timestamp(last_ts).tz_localize("UTC")
 
+        df['ts_dt'] = pd.to_datetime(df['timestamp'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו קומיטים לפני {last_ts} - נותרו {len(df)}")
@@ -30,7 +33,12 @@ def load_filtered_github_issues():
     df = load_github_issues()
     last_ts = get_last_processed_time("github_issues_raw")
     if last_ts:
-        df['ts_dt'] = pd.to_datetime(df['created_at'])
+        if last_ts.tzinfo is None:
+            last_ts = pd.Timestamp(last_ts)
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize("UTC")
+
+        df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו Issues לפני {last_ts} - נותרו {len(df)}")
@@ -41,7 +49,12 @@ def load_filtered_github_reviews():
     df = load_github_reviews()
     last_ts = get_last_processed_time("github_reviews_raw")
     if last_ts:
-        df['ts_dt'] = pd.to_datetime(df['created_at'])
+        if last_ts.tzinfo is None:
+            last_ts = pd.Timestamp(last_ts)
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize("UTC")
+
+        df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו Reviews לפני {last_ts} - נותרו {len(df)}")
@@ -52,11 +65,19 @@ def load_filtered_github_prs():
     df = load_github_prs()
     last_ts = get_last_processed_time("github_prs_raw")
     if last_ts:
-        df['ts_dt'] = pd.to_datetime(df['created_at'])
+        import pandas as pd  # ודא שזה קיים בראש הקובץ
+
+    if last_ts.tzinfo is None:
+        last_ts = pd.Timestamp(last_ts).tz_localize("UTC")
+    else:
+        last_ts = pd.Timestamp(last_ts)
+
+        df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו PRs לפני {last_ts} - נותרו {len(df)}")
     return df
+
 
 # --- פונקציות חיבורים לדאטא בייס ---
 
@@ -116,10 +137,13 @@ def load_filtered_slack_messages():
     last_ts = get_last_processed_time("slack_messages_raw")
 
     if last_ts:
-        df['ts_dt'] = pd.to_datetime(df['ts'], unit='s')
-        df = df[df['ts_dt'] > last_ts].copy()
-        print(f"🧹 סוננו הודעות לפני {last_ts} - נותרו {len(df)}")
-        df = df.drop(columns=['ts_dt'])
+        df['ts_dt'] = pd.to_datetime(df['ts'], unit='s', utc=True)
+        last_ts = pd.Timestamp(last_ts)
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.tz_localize("UTC")
+
+            print(f"🧹 סוננו הודעות לפני {last_ts} - נותרו {len(df)}")
+            df = df.drop(columns=['ts_dt'])
 
     # סינון הודעות שנמחקו
     if 'deleted' in df.columns:
@@ -461,7 +485,7 @@ def build_project_status_daily(github_prs_df, github_issues_df, all_users_df):
 
     today = prs_df['day'].max()  # קבלת התאריך המקסימלי מנתוני ה-PRs הקיימים
     if pd.isna(today):  # אם אין PRs בכלל, today יהיה NaT
-        today = datetime.now().date()  # השתמש בתאריך היום
+        today = pd.Timestamp.utcnow().date()
 
     stale_threshold = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=3)
     stale_prs = prs_df[(prs_df['state'] == 'open') & (
