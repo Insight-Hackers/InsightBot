@@ -9,9 +9,7 @@ import traceback
 from io import BytesIO
 import requests
 import threading
-import openai
 from openai import OpenAI
-
 
 
 app = Flask(__name__)
@@ -24,77 +22,77 @@ GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 # הוספה אם לא יעבוד נמחק
 
 
-def handle_voice_message_in_background(event, audio_url):
-    print("🎙 התחלת טיפול בהודעה קולית")
+# def handle_voice_message_in_background(event, audio_url):
+#     print("🎙 התחלת טיפול בהודעה קולית")
 
-    transcription = transcribe_audio_from_url(audio_url)
-    print(f"📄 תוצאה מהתמלול: {transcription}")
+#     transcription = transcribe_audio_from_url(audio_url)
+#     print(f"📄 תוצאה מהתמלול: {transcription}")
 
-    if transcription is None:
-        transcription = "[שגיאה בתמלול]"
+#     if transcription is None:
+#         transcription = "[שגיאה בתמלול]"
 
-    msg_id = event.get("client_msg_id") or event.get("ts")
-    print(f"🆔 מזהה הודעה לעדכון: {msg_id}")
+#     msg_id = event.get("client_msg_id") or event.get("ts")
+#     print(f"🆔 מזהה הודעה לעדכון: {msg_id}")
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            UPDATE slack_messages_raw
-            SET text = %s, event_type = %s
-            WHERE id = %s
-        """, (
-            transcription,
-            "voice_message_transcribed",
-            str(msg_id)
-        ))
-        conn.commit()
-        print("🗣 תמלול הוכנס לשורה קיימת במסד")
-    except Exception as e:
-        print("❌ שגיאה בעדכון תמלול למסד:", e)
-        conn.rollback()
-    finally:
-        cursor.close()
-        conn.close()
+#     conn = get_db_connection()
+#     cursor = conn.cursor()
+#     try:
+#         cursor.execute("""
+#             UPDATE slack_messages_raw
+#             SET text = %s, event_type = %s
+#             WHERE id = %s
+#         """, (
+#             transcription,
+#             "voice_message_transcribed",
+#             str(msg_id)
+#         ))
+#         conn.commit()
+#         print("🗣 תמלול הוכנס לשורה קיימת במסד")
+#     except Exception as e:
+#         print("❌ שגיאה בעדכון תמלול למסד:", e)
+#         conn.rollback()
+#     finally:
+#         cursor.close()
+#         conn.close()
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def transcribe_audio_from_url(audio_url):
-    print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
-    try:
-        slack_token = os.getenv('SLACK_BOT_TOKEN')
-        if not slack_token:
-            print("🚫 SLACK_BOT_TOKEN לא מוגדר")
-            return "[שגיאה בתמלול - אין טוקן]"
+# def transcribe_audio_from_url(audio_url):
+#     print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
+#     try:
+#         slack_token = os.getenv('SLACK_BOT_TOKEN')
+#         if not slack_token:
+#             print("🚫 SLACK_BOT_TOKEN לא מוגדר")
+#             return "[שגיאה בתמלול - אין טוקן]"
 
-        headers = {'Authorization': f"Bearer {slack_token}"}
-        response = requests.get(audio_url, headers=headers)
+#         headers = {'Authorization': f"Bearer {slack_token}"}
+#         response = requests.get(audio_url, headers=headers)
 
-        print(f"📥 סטטוס הורדה: {response.status_code}")
-        print(f"📦 גודל קובץ: {len(response.content)} bytes")
+#         print(f"📥 סטטוס הורדה: {response.status_code}")
+#         print(f"📦 גודל קובץ: {len(response.content)} bytes")
 
-        if response.status_code != 200:
-            print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
-            return "[שגיאה בהורדה]"
+#         if response.status_code != 200:
+#             print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
+#             return "[שגיאה בהורדה]"
 
-        audio_file = BytesIO(response.content)
-        audio_file.name = "audio.m4a"
+#         audio_file = BytesIO(response.content)
+#         audio_file.name = "audio.m4a"
 
-        # כאן נכנסות בדיוק שלוש השורות שלך:
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="he"
-        )
-        text = transcript.text
+#         # כאן נכנסות בדיוק שלוש השורות שלך:
+#         transcript = client.audio.transcriptions.create(
+#             model="whisper-1",
+#             file=audio_file,
+#             language="he"
+#         )
+#         text = transcript.text
 
-        print("✅ תמלול הושלם:", text)
-        return text if text else "[לא זוהה דיבור בתמלול]"
+#         print("✅ תמלול הושלם:", text)
+#         return text if text else "[לא זוהה דיבור בתמלול]"
 
-    except Exception as e:
-        print("❌ חריג במהלך התמלול:", e)
-        return "[שגיאה בתמלול]"
+#     except Exception as e:
+#         print("❌ חריג במהלך התמלול:", e)
+#         return "[שגיאה בתמלול]"
 
 
 # ע ד פה
@@ -202,6 +200,19 @@ PRIMARY_KEYS = {
     # Composite key in DB, כאן עשוי להיות צורך בהתאמה מיוחדת
     'user_daily_summary': 'user_id',
 }
+slack_message_columns = [
+    "id",
+    "event_type",
+    "user_id",
+    "channel_id",
+    "text",
+    "ts",
+    "parent_id",
+    "is_list",
+    "list_items",
+    "num_list_items",
+    "raw"
+]
 
 
 @app.route("/slack/events", methods=["POST"])
@@ -229,20 +240,22 @@ def slack_events():
         list_items = extract_list_items(text)
         is_list = bool(list_items)
         num_list_items = len(list_items) if list_items else 0
+        # Define the columns for slack_messages_raw
 
-        df = pd.DataFrame([{
-            "id": event.get("client_msg_id") or event.get("ts"),
-            "event_type": "message",
-            "user_id": event.get("user"),
-            "channel_id": event.get("channel"),
-            "text": text,
-            "ts": float(event.get("ts", 0)),
-            "parent_id": event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
-            "is_list": is_list,
-            "list_items": list_items,
-            "num_list_items": num_list_items,
-            "raw": json.dumps(event)
-        }])
+        df = pd.DataFrame([[
+            event.get("client_msg_id") or event.get("ts"),
+            "message",
+            event.get("user"),
+            event.get("channel"),
+            text,
+            float(event.get("ts", 0)),
+            event.get("thread_ts") if event.get(
+                "thread_ts") != event.get("ts") else None,
+            is_list,
+            list_items,
+            num_list_items,
+            json.dumps(event)
+        ]], columns=slack_message_columns)
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
         save_dataframe_to_db(df_filtered, 'slack_messages_raw',
@@ -275,42 +288,42 @@ def slack_events():
                 return "", 200
 
     # הוספה שאולי נמחק
-    if event.get("type") == "message" and "files" in event:
-     for f in event["files"]:
-        mimetype = f.get("mimetype", "")
-        print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
+    # if event.get("type") == "message" and "files" in event:
+    #  for f in event["files"]:
+    #     mimetype = f.get("mimetype", "")
+    #     print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
 
-        if mimetype.startswith("audio/"):
-            audio_url = f.get("url_private")
-            print(f"🔗 קישור להורדה: {audio_url}")
+    #     if mimetype.startswith("audio/"):
+    #         audio_url = f.get("url_private")
+    #         print(f"🔗 קישור להורדה: {audio_url}")
 
-            message_id = event.get("client_msg_id") or event.get("ts")
-            print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
+    #         message_id = event.get("client_msg_id") or event.get("ts")
+    #         print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
 
-            df = pd.DataFrame([{
-                "id": message_id,
-                "event_type": "voice_message",
-                "user_id": event.get("user"),
-                "channel_id": event.get("channel"),
-                "text": "[בתהליך תמלול]",
-                "ts": float(event.get("ts", 0)),
-                "parent_id": None,
-                "is_list": False,
-                "list_items": None,
-                "num_list_items": 0,
-                "raw": json.dumps(event)
-            }])
-            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+    #         df = pd.DataFrame([{
+    #             "id": message_id,
+    #             "event_type": "voice_message",
+    #             "user_id": event.get("user"),
+    #             "channel_id": event.get("channel"),
+    #             "text": "[בתהליך תמלול]",
+    #             "ts": float(event.get("ts", 0)),
+    #             "parent_id": None,
+    #             "is_list": False,
+    #             "list_items": None,
+    #             "num_list_items": 0,
+    #             "raw": json.dumps(event)
+    #         }])
+    #         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+    #         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
 
-            print("🚀 מפעיל תמלול קולית ברקע")
-            threading.Thread(
-                target=handle_voice_message_in_background,
-                args=(event, audio_url),
-                daemon=True
-            ).start()
+    #         print("🚀 מפעיל תמלול קולית ברקע")
+    #         threading.Thread(
+    #             target=handle_voice_message_in_background,
+    #             args=(event, audio_url),
+    #             daemon=True
+    #         ).start()
 
-            return "", 200
+    #         return "", 200
 
             # עד פה
 
@@ -385,14 +398,15 @@ def slack_events():
 
     df['raw'] = df.apply(lambda row: json.dumps(event), axis=1)
 
+    import re
+
     def extract_list_items(text):
         if not isinstance(text, str):
             return None
         lines = text.splitlines()
-        items = []
-        for line in lines:
-            if line.strip().startswith(("* ", "- ", "• ")):
-                items.append(line[2:].strip())
+        pattern = re.compile(r'^\s*[\*\-\•\d+\.]+\s*(.+)')
+        items = [match.group(1).strip()
+                 for line in lines if (match := pattern.match(line))]
         return items if items else None
 
     if 'text' in df.columns:

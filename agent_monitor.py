@@ -1,3 +1,9 @@
+
+
+
+
+
+
 import pandas as pd
 import re
 from datetime import datetime
@@ -23,27 +29,25 @@ def get_db_connection():
 
 
 def load_slack_messages():
-    """טוען הודעות Slack גולמיות מטבלת slack_messages_raw."""
     conn = get_db_connection()
     query = "SELECT * FROM slack_messages_raw"
     try:
         df = pd.read_sql(query, conn)
-        # ודא שיש עמודת user_id, שנה מ'user' אם קיים
         if 'user' in df.columns and 'user_id' not in df.columns:
             df = df.rename(columns={'user': 'user_id'})
+        df = normalize_user_ids(df)
         return df
     finally:
         conn.close()
 
 
 def load_slack_reports():
-    """טוען דוחות Slack מטבלת slack_reports_raw."""
     conn = get_db_connection()
     query = "SELECT * FROM slack_reports_raw"
     try:
         df = pd.read_sql(query, conn)
+        df = normalize_user_ids(df)
         if df.empty:
-            # הגדר עמודות צפויות עבור DataFrame ריק
             return pd.DataFrame(columns=['id', 'user_id', 'text', 'ts', 'channel_id', 'report_type', 'status'])
         return df
     finally:
@@ -79,6 +83,13 @@ def load_github_commits():
         return df
     finally:
         conn.close()
+
+
+def analyze_pull_requests(github_prs_df):
+    if github_prs_df.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'pull_requests'])
+    github_prs_df['date'] = pd.to_datetime(github_prs_df['created_at']).dt.date
+    return github_prs_df.groupby(['user_id', 'date']).size().reset_index(name='pull_requests')
 
 
 def load_github_reviews():
@@ -118,15 +129,37 @@ def analyze_total_messages(slack_df):
 
 
 def analyze_help_requests(slack_df):
-    """מזהה ומנתח בקשות עזרה מהודעות Slack."""
-    help_keywords = ["עזרה", "בעיה", "שאלה", "לא מצליח", "נתקע", "תקוע",
-                     "איזה שלב", "איך ממשיכים", "מה עושים", "מישהו יכול לעזור",
-                     "לא עובד", "משהו לא תקין", "צריך עזרה",
-                     "help", "stuck", "issue", "problem", "need help", "can't", "error", "?",
-                     "🆘", "❓", "🙋‍♀️"]
-    pattern = '|'.join(map(re.escape, help_keywords))
-    help_msgs = slack_df[slack_df['text'].str.contains(
-        pattern, case=False, na=False)].copy()
+    """מזהה ומנתח בקשות עזרה מהודעות Slack, כולל זיהוי שגיאות כתיב."""
+    help_keywords = [
+        "עזרה", "בעיה", "שאלה", "לא מצליח", "נתקע", "תקוע",
+        "איזה שלב", "איך ממשיכים", "מה עושים", "מישהו יכול לעזור",
+        "לא עובד", "משהו לא תקין", "צריך עזרה",
+        "help", "stuck", "issue", "problem", "need help", "can't", "error",
+        "🆘", "❓", "🙋‍♀"
+    ]
+
+    # שלב ראשון: ביטוי רגולרי
+    regex_pattern = '|'.join(map(re.escape, help_keywords))
+    basic_matches = slack_df['text'].str.contains(
+        regex_pattern, case=False, na=False)
+
+    # שלב שני: זיהוי fuzzy
+    def fuzzy_contains_help(text):
+        if not isinstance(text, str):
+            return False
+        for word in text.split():
+            for keyword in help_keywords:
+                if fuzz.partial_ratio(word.lower(), keyword.lower()) >= 85:
+                    return True
+        return False
+
+    fuzzy_matches = slack_df['text'].apply(fuzzy_contains_help)
+
+    # איחוד שני המסלולים
+    help_msgs = slack_df[basic_matches | fuzzy_matches].copy()
+    if help_msgs.empty:
+        return pd.DataFrame(columns=['user_id', 'date', 'text', 'ts', 'type'])
+
     help_msgs['type'] = 'help_request'
     help_msgs['date'] = pd.to_datetime(help_msgs['ts'], unit='s').dt.date
     return help_msgs
@@ -415,8 +448,8 @@ def build_alerts(user_summary_df):
 # --- פונקציית שמירה למסד הנתונים ---
 
 
-def save_dataframe_to_db(df, table_name):
-    """שומר DataFrame לטבלה במסד הנתונים של Supabase."""
+def save_dataframe_to_db(df, table_name, conflict_columns=None):
+    """שומר DataFrame לטבלה במסד הנתונים של Supabase, כולל עדכון במקרה של CONFLICT."""
     if df.empty:
         print(f"⚠️ הטבלה {table_name} ריקה - לא נשמר כלום")
         return
@@ -425,24 +458,37 @@ def save_dataframe_to_db(df, table_name):
     cursor = conn.cursor()
 
     try:
-        # לוודא שכל העמודות ב-DataFrame הן בסוג נתונים תואם ל-PostgreSQL
-        # זה טיפול גנרי, ניתן להתאים אותו פרטנית אם יש בעיות עם סוגי נתונים ספציפיים
+        # המרת סוגי נתונים
         for column in df.columns:
-            # המרת תאריכים לפורמט ש-psycopg2 יודע להתמודד איתו
             if pd.api.types.is_datetime64_any_dtype(df[column]):
                 df[column] = df[column].dt.to_pydatetime()
-            # המרת אובייקטים (כמו UUID) למחרוזת
             elif pd.api.types.is_object_dtype(df[column]):
                 df[column] = df[column].astype(str)
 
         for _, row in df.iterrows():
             cols = ','.join(df.columns)
             placeholders = ','.join(['%s'] * len(df.columns))
-            # שימוש ב-ON CONFLICT (id) DO UPDATE SET ... או DO NOTHING אם אין ID
-            # לצורך פשטות נשתמש ב-ON CONFLICT DO NOTHING - זה אומר שאם יש שורה עם אותו מפתח ראשי, היא לא תיכנס
-            # אם תרצה לעדכן שורות קיימות, תצטרך לפרט את העמודות לעדכון
-            sql = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-            cursor.execute(sql, tuple(row))
+            values = tuple(row)
+
+            if conflict_columns:
+                conflict_clause = ', '.join(conflict_columns)
+                update_clause = ', '.join([
+                    f"{col} = EXCLUDED.{col}"
+                    for col in df.columns if col not in conflict_columns
+                ])
+                sql = f"""
+                INSERT INTO {table_name} ({cols})
+                VALUES ({placeholders})
+                ON CONFLICT ({conflict_clause}) DO UPDATE SET {update_clause}
+                """
+            else:
+                sql = f"""
+                INSERT INTO {table_name} ({cols})
+                VALUES ({placeholders})
+                ON CONFLICT DO NOTHING
+                """
+
+            cursor.execute(sql, values)
 
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
@@ -480,6 +526,14 @@ def load_github_reviews():
     conn = get_db_connection()
     df = pd.read_sql("SELECT * FROM github_reviews_raw", conn)
     conn.close()
+    return df
+
+
+def normalize_user_ids(df):
+    """מאחדת עמודת user_id ע״י הסרת רווחים ו-type אחיד."""
+    if 'user_id' in df.columns:
+        df['user_id'] = df['user_id'].astype(
+            str).str.strip().str.replace(' ', '')
     return df
 
 
