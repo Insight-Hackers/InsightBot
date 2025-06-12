@@ -7,6 +7,7 @@ import uuid
 import psycopg2
 from thefuzz import fuzz
 from datetime import date
+import time
 
 # --- פונקציות חיבורים לדאטא בייס ---
 
@@ -517,7 +518,7 @@ def load_github_commits():
 
 def agent_monitor():
     print("🚀 מתחיל לנתח נתונים מ־Supabase...")
-
+    time.sleep(10)
     try:
         # --- 1. טעינת כל ה-DataFrames הנדרשים ממסד הנתונים ---
         from slack_deletion_sync import load_filtered_slack_messages
