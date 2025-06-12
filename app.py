@@ -201,7 +201,19 @@ PRIMARY_KEYS = {
     # Composite key in DB, כאן עשוי להיות צורך בהתאמה מיוחדת
     'user_daily_summary': 'user_id',
 }
-
+slack_message_columns = [
+            "id",
+            "event_type",
+            "user_id",
+            "channel_id",
+            "text",
+            "ts",
+            "parent_id",
+            "is_list",
+            "list_items",
+            "num_list_items",
+            "raw"
+        ]
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
@@ -228,20 +240,22 @@ def slack_events():
         list_items = extract_list_items(text)
         is_list = bool(list_items)
         num_list_items = len(list_items) if list_items else 0
+        # Define the columns for slack_messages_raw
+        
 
-        df = pd.DataFrame([{
-            "id": event.get("client_msg_id") or event.get("ts"),
-            "event_type": "message",
-            "user_id": event.get("user"),
-            "channel_id": event.get("channel"),
-            "text": text,
-            "ts": float(event.get("ts", 0)),
-            "parent_id": event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
-            "is_list": is_list,
-            "list_items": list_items,
-            "num_list_items": num_list_items,
-            "raw": json.dumps(event)
-        }])
+        df = pd.DataFrame([[
+            event.get("client_msg_id") or event.get("ts"),
+            "message",
+            event.get("user"),
+            event.get("channel"),
+            text,
+            float(event.get("ts", 0)),
+            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            is_list,
+            list_items,
+            num_list_items,
+            json.dumps(event)
+        ]], columns=slack_message_columns)
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
         save_dataframe_to_db(df_filtered, 'slack_messages_raw',
