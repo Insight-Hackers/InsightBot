@@ -190,7 +190,7 @@ def get_user_email(user_id):
 def slack_events():
     data = request.json
     print("📥 Slack event received:")
-    print(json.dumps(data, indent=2))
+    # print(json.dumps(data, indent=2))
     
     event = data.get("event", {})
     if (event.get("type") == "message" and 
