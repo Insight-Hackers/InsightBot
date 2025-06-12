@@ -215,7 +215,17 @@ slack_message_columns = [
     "num_list_items",
     "raw"
 ]
-
+def get_user_email(user_id):
+    slack_token = os.getenv("api_token")
+    url = f"https://slack.com/api/users.info?user={user_id}"
+    headers = {
+        "Authorization": f"Bearer {slack_token}"
+    }
+    res = requests.get(url, headers=headers)
+    data = res.json()
+    if data.get("ok") and data.get("user", {}).get("profile", {}).get("email"):
+        return data["user"]["profile"]["email"]
+    return None
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
@@ -396,18 +406,11 @@ def slack_events():
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
         deleted_message = event.get("previous_message", {})
         user_id = deleted_message.get("user")
-        api_token = os.getenv("api_token")
-        
-        res = requests.get(
-             "https://slack.com/api/users.info",
-              headers={"Authorization": f"Bearer {api_token}"},
-              params={"user": user_id}
-     )
-        
+        email= get_user_email(user_id) if user_id else None
         df = pd.DataFrame([{
             "id": event.get("event_ts"),
             "event_type": "message_deleted",
-            "user_id": data["user"]["profile"].get("email"),
+            "user_id":email,
             "channel_id": event.get("channel"),
             "text": deleted_message.get("text", "[לא נמצא טקסט]"),
             "ts": float(event.get("event_ts")),
