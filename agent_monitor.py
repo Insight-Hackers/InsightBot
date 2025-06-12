@@ -34,7 +34,9 @@ def load_filtered_github_issues():
     last_ts = get_last_processed_time("github_issues_raw")
     if last_ts:
         if last_ts.tzinfo is None:
-            last_ts = last_ts.tz_localize("UTC")
+            last_ts = pd.Timestamp(last_ts)
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize("UTC")
 
         df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
@@ -48,7 +50,9 @@ def load_filtered_github_reviews():
     last_ts = get_last_processed_time("github_reviews_raw")
     if last_ts:
         if last_ts.tzinfo is None:
-            last_ts = last_ts.tz_localize("UTC")
+            last_ts = pd.Timestamp(last_ts)
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize("UTC")
 
         df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
