@@ -223,6 +223,7 @@ def slack_events():
 
     event = data.get("event", {})
     if event.get("type") == "message" and "files" in event:
+        print("📎 we are clever")
         for f in event["files"]:
             filetype = f.get("filetype")
             if filetype == "list" and f.get("mode") == "list":
