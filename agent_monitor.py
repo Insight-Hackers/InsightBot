@@ -6,6 +6,7 @@ from tabulate import tabulate
 import uuid
 import psycopg2
 from thefuzz import fuzz
+from datetime import date
 
 # --- פונקציות חיבורים לדאטא בייס ---
 
@@ -122,6 +123,7 @@ def analyze_total_messages(slack_df):
     slack_df['date'] = pd.to_datetime(slack_df['ts'], unit='s').dt.date
     return slack_df.groupby(['user_id', 'date']).size().reset_index(name='total_messages')
 
+
 def normalize_user_ids(df):
     """אם יש עמודת user – שנה את שמה ל־user_id"""
     if 'user' in df.columns and 'user_id' not in df.columns:
@@ -134,15 +136,16 @@ def analyze_help_requests(slack_df):
     help_keywords = [
         "עזרה", "בעיה", "שאלה", "לא מצליח", "נתקע", "תקוע",
         "איזה שלב", "איך ממשיכים", "מה עושים", "מישהו יכול לעזור",
-        "לא עובד", "משהו לא תקין", "צריך עזרה","איך ממשיכים",
+        "לא עובד", "משהו לא תקין", "צריך עזרה", "איך ממשיכים",
         "איך מתקדם", "מה השלב הבא", "מה לעשות", "מה הבעיה",
         "help", "stuck", "issue", "problem", "need help", "can't", "error",
         "🆘", "❓", "🙋‍♀"
     ]
-    
+
     # שלב ראשון: נזהה הודעות שמכילות ביטוי רגיל
     regex_pattern = '|'.join(map(re.escape, help_keywords))
-    basic_matches = slack_df['text'].str.contains(regex_pattern, case=False, na=False)
+    basic_matches = slack_df['text'].str.contains(
+        regex_pattern, case=False, na=False)
 
     # שלב שני: נזהה הודעות עם שגיאות כתיב – לפי fuzzy match
     def fuzzy_contains_help(text):
@@ -163,6 +166,7 @@ def analyze_help_requests(slack_df):
     help_msgs['date'] = pd.to_datetime(help_msgs['ts'], unit='s').dt.date
 
     return help_msgs
+
 
 def analyze_help_requests_count(slack_df):
     """סופר את מספר בקשות העזרה לכל משתמש ביום."""
@@ -509,6 +513,8 @@ def load_github_commits():
 # ============================
 # 🧪 MAIN DEMO - הרצת דמו מלאה
 # ============================
+
+
 def agent_monitor():
     print("🚀 מתחיל לנתח נתונים מ־Supabase...")
 
@@ -558,13 +564,35 @@ def agent_monitor():
         print(tabulate(user_summary_df.head(), headers='keys', tablefmt='grid'))
 
         print("\n📊 סיכום סטטוס פרויקט יומי:")
-        print(tabulate(project_status_daily_df.head(), headers='keys', tablefmt='grid'))
+        print(tabulate(project_status_daily_df.head(),
+              headers='keys', tablefmt='grid'))
 
         print(f"\n🚨 נמצאו {len(alerts_df)} התראות")
 
         # --- 4. שמירה למסד הנתונים ---
         print("\n💾 שומר נתונים למסד הנתונים...")
-        save_dataframe_to_db(user_summary_df, 'user_daily_summary')
+       # --- 2. ביצוע הניתוח ---
+        print("🔍 מבצע ניתוח נתונים...")
+        user_summary_df = build_user_daily_summary(
+            slack_df, replies_df, slack_reports_df,
+            github_commits_df, github_reviews_df, github_issues_df
+        )
+
+# ✅ הוספת בדיקות לפני שמירה:
+        print("✅ טיפוסים:")
+        print(user_summary_df.dtypes)
+
+        print("🔍 דוגמה לשורה:")
+        print(user_summary_df.head(1).to_dict())
+
+        assert user_summary_df['day'].apply(
+            lambda d: isinstance(d, date)).all(), "❌ טיפוס שגוי ב-day"
+        assert user_summary_df['user_id'].notna().all(), "❌ user_id חסר"
+
+# המשך שמירה
+        save_dataframe_to_db(
+            user_summary_df, 'user_daily_summary', conflict_columns=['user_id', 'day'])
+
         save_dataframe_to_db(project_status_daily_df, 'project_status_daily')
         save_dataframe_to_db(alerts_df, 'alerts')
 
