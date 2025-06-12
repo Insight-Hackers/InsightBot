@@ -191,13 +191,52 @@ def slack_events():
     data = request.json
     print("📥 Slack event received:")
     print(json.dumps(data, indent=2))
-    # yafit
+    
     event = data.get("event", {})
-    if (event.get("type") == "message" and event.get("subtype") == "file_share" and "files" in event):
-             print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
-             # 👇 כאן תכתבי את הקוד שיטפל בזה
-             return "", 200
-    #finish
+    if (event.get("type") == "message" and 
+        event.get("subtype") == "file_share" and 
+        "files" in event):
+        
+        print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
+
+        url = os.getenv("SLACK_FILE_URL")
+        api_token = os.getenv("api_token")
+        headers = {
+            'Authorization': f'Bearer {api_token}',
+            'Content-Type': 'application/json'
+        }
+
+        res = requests.get(url, headers=headers)
+        csv_url = res.json()['list_csv_download_url']
+
+        # Download the CSV file
+        csv_res = requests.get(url=csv_url, headers=headers)
+        csv_res.raise_for_status()
+        csv_data = csv_res.content.decode('utf-8').splitlines()
+        total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
+                     for line in csv_data[1:]]
+        email = get_user_email(event.get("user"))
+
+        df = pd.DataFrame([[
+            event.get("client_msg_id") or event.get("ts"),
+            "list",
+            email,
+            event.get("channel"),
+            total_csv,
+            float(event.get("ts", 0)),
+            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+            True,
+            total_csv,
+            res.json()["files"]["column_count"],
+            json.dumps(event)
+        ]], columns=slack_message_columns)
+        
+        df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+        print("📋 Slack list saved to DB")
+        
+        return "", 200
+    
     
     # 🎯 הודעה מסוג message עם קובץ רשימה
     if event.get("type") == "message" and "files" in event:
