@@ -219,6 +219,7 @@ def slack_events():
         csv_data = csv_res.content.decode('utf-8').splitlines()
         total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
                      for line in csv_data[1:]]
+        json_data = json.dumps(total_csv, ensure_ascii=False)
         print( total_csv)
         email = get_user_email(event.get("user"))
 
@@ -227,11 +228,11 @@ def slack_events():
             "list",
             email,
             event.get("channel"),
-            total_csv,
+            json_data,
             float(event.get("ts", 0)),
             event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             True,
-            total_csv,
+            json_data,
             event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
             True
         ]], columns=slack_message_columns)
