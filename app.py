@@ -11,6 +11,7 @@ import requests
 import threading
 from openai import OpenAI
 import re
+import openai
 from dotenv import load_dotenv
 from agent_monitor import agent_monitor
 
@@ -196,14 +197,55 @@ def slack_events():
     # print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
-    if (event.get("type") == "message" 
-        and event.get("subtype") == "file_share" and "files" in event and
-         event["files"][0].get("mimetype", "").startswith("audio/")):
-         mimetype = event["files"][0].get("mimetype", "")
-         print(f"🎙️ התקבלה הודעה קולית! סוג קובץ: {mimetype}")
-         
-         return "", 200
+   
+    if event.get("type") == "message" and event.get("subtype") == "file_share" and "files" in event:
+        file = event["files"][0]
+        mimetype = file.get("mimetype", "")
 
+        # 🎙️ הודעה קולית (audio)
+        if mimetype.startswith("audio/"):
+            print("🎙️ התקבלה הודעה קולית!")
+            audio_url = file.get("url_private_download")
+            api_token = os.getenv("api_token")
+            headers = {"Authorization": f"Bearer {api_token}"}
+
+            audio_response = requests.get(audio_url, headers=headers)
+            audio_response.raise_for_status()
+
+            with open("temp_audio.mp3", "wb") as f:
+                f.write(audio_response.content)
+
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+
+            with open("temp_audio.mp3", "rb") as audio_file:
+                transcript = openai.Audio.transcribe("whisper-1", audio_file)
+
+            text = transcript["text"]
+            print("📝 תמלול מהקול:", text)
+
+            email = get_user_email(event.get("user"))
+            df = pd.DataFrame([[
+                event.get("client_msg_id") or event.get("ts"),
+                "voice_message",
+                email,
+                event.get("channel"),
+                text,
+                float(event.get("ts", 0)),
+                event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
+                False,
+                None,
+                0,
+                json.dumps(event)
+            ]], columns=slack_message_columns)
+
+            df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+            save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+
+            print("✅ הודעה קולית נשמרה למסד עם תמלול")
+            os.remove("temp_audio.mp3")
+            return "", 200
+        
+ 
     if (event.get("type") == "message" and 
         event.get("subtype") == "file_share" and 
         "files" in event):
