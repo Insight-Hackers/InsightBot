@@ -215,7 +215,7 @@ def slack_events():
             with open("temp_audio.mp3", "wb") as f:
                 f.write(audio_response.content)
 
-            openai.api_key = os.getenv("OPENAI_API_KEY")
+            openai.api_key = os.getenv("OPENAI_API_KEY")#
             try:
                 with open("temp_audio.mp3", "rb") as audio_file:
                     transcript = openai.audio.transcriptions.create(
