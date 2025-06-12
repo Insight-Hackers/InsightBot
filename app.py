@@ -230,7 +230,7 @@ def slack_events():
             event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             True,
             total_csv,
-            res.json()["files"]["column_count"],
+            event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
             json.dumps(event)
         ]], columns=slack_message_columns)
         
