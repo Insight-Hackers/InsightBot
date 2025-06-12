@@ -204,6 +204,7 @@ def slack_events():
             print("⚠️ לא נמצא URL להורדת הקובץ")
             return "", 400
         api_token = os.getenv("api_token")
+        print(f"🔑 משתמשת ב־api_token: {api_token}")
         headers = {
             'Authorization': f'Bearer {api_token}',
             'Content-Type': 'application/json'
@@ -218,6 +219,8 @@ def slack_events():
         csv_data = csv_res.content.decode('utf-8').splitlines()
         total_csv = [dict(zip(csv_data[0].split(','), line.split(',')))
                      for line in csv_data[1:]]
+        json_data = json.dumps(total_csv, ensure_ascii=False)
+        print( total_csv)
         email = get_user_email(event.get("user"))
 
         df = pd.DataFrame([[
@@ -225,13 +228,13 @@ def slack_events():
             "list",
             email,
             event.get("channel"),
-            total_csv,
+            json_data,
             float(event.get("ts", 0)),
             event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             True,
-            total_csv,
+            json_data,
             event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
-            json.dumps(event)
+            True
         ]], columns=slack_message_columns)
         
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
