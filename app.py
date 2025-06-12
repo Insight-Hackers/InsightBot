@@ -272,8 +272,10 @@ def slack_events():
     data = request.json
     print("📥 Slack event received:")
     print(json.dumps(data, indent=2))
-    #list
+
     event = data.get("event", {})
+
+    # 🎯 הודעה מסוג message עם קובץ רשימה
     if event.get("type") == "message" and "files" in event:
         print("📎 we are clever")
         for f in event["files"]:
@@ -287,68 +289,47 @@ def slack_events():
                     'Authorization': f'Bearer {api_token}',
                     'Content-Type': 'application/json'
                 }
+
                 res = requests.get(url, headers=headers)
-                # print(res.json())
                 csv_url = res.json()['list_csv_download_url']
-                # Download the CSV file
+
+                # הורדת קובץ ה־CSV
                 csv_res = requests.get(url=csv_url, headers=headers)
                 csv_res.raise_for_status()
                 csv_data = csv_res.content.decode('utf-8').splitlines()
+
                 total_csv = [
                     dict(zip(csv_data[0].split(','), line.split(',')))
                     for line in csv_data[1:]
                 ]
-
+                email = get_user_email(event.get("user"))
                 df = pd.DataFrame([[
                     event.get("client_msg_id") or event.get("ts"),
                     "list",
-                    event.get("user"),
+                    email,
                     event.get("channel"),
                     total_csv,
                     float(event.get("ts", 0)),
-                    event.get("thread_ts") if event.get(
-                        "thread_ts") != event.get("ts") else None,
+                    event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
                     True,
                     total_csv,
                     f["list_limits"]["row_count"],
                     json.dumps(event)
                 ]], columns=slack_message_columns)
 
-                df_filtered = filter_columns_for_table(
-                    df, 'slack_messages_raw')
-                save_dataframe_to_db(
-                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+                df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
+                save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+
                 print("📋 Slack list saved to DB")
                 return "", 200
 
-            elif filetype == "text" and f.get("mode") == "snippet":
-                snippet_text = f.get("preview") or "[Error reading snippet]"
-                df = pd.DataFrame([{
-                    "id": event.get("client_msg_id") or event.get("ts") + "_snippet",
-                    "event_type": "text_snippet",
-                    "user_id": event.get("user"),
-                    "channel_id": event.get("channel"),
-                    "text": snippet_text,
-                    "ts": float(event.get("ts", 0)),
-                    "parent_id": event.get("client_msg_id") or event.get("ts"),
-                    "is_list": False,
-                    "list_items": None,
-                    "num_list_items": 0,
-                    "raw": json.dumps(event)
-                }])
-                df_filtered = filter_columns_for_table(
-                    df, 'slack_messages_raw')
-                save_dataframe_to_db(
-                    df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-                print("📄 Text snippet saved to DB")
-                return "", 200
-
-    
+    # ✉️ הודעת טקסט רגילה (כולל בדיקת רשימות)
+    if event.get("type") == "message":
         text = event.get("text", "")
         list_items = extract_list_items(text)
         is_list = bool(list_items)
         num_list_items = len(list_items) if list_items else 0
-        email= get_user_email(event.get("user"))
+        email = get_user_email(event.get("user"))
 
         df = pd.DataFrame([[
             event.get("client_msg_id") or event.get("ts"),
@@ -357,7 +338,7 @@ def slack_events():
             event.get("channel"),
             text,
             float(event.get("ts", 0)),
-            event.get("thread_ts") if event.get(00+1+"thread_ts") != event.get("ts") else None,
+            event.get("thread_ts") if event.get("thread_ts") != event.get("ts") else None,
             is_list,
             list_items,
             num_list_items,
@@ -365,8 +346,8 @@ def slack_events():
         ]], columns=slack_message_columns)
 
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-        save_dataframe_to_db(df_filtered, 'slack_messages_raw',
-                             PRIMARY_KEYS['slack_messages_raw'])
+        save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
+
         print("📝 הודעת טקסט רגילה נשמרה למסד (כולל בדיקת רשימה)")
         return "", 200
 
@@ -375,10 +356,11 @@ def slack_events():
         for f in event["files"]:
             if f.get("filetype") == "text" and f.get("mode") == "snippet":
                 snippet_text = f.get("preview") or "[שגיאה בקריאת סניפט]"
+                email = get_user_email(event.get("user"))
                 df = pd.DataFrame([{
                     "id": event.get("client_msg_id") or event.get("ts") + "_snippet",
                     "event_type": "text_snippet",
-                    "user_id": event.get("user"),
+                    "user_id": email,
                     "channel_id": event.get("channel"),
                     "text": snippet_text,
                     "ts": float(event.get("ts", 0)),
@@ -394,45 +376,7 @@ def slack_events():
                     df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
                 print("📄 סניפט טקסט נשמר למסד")
                 return "", 200
-    # הוספה שאולי נמחק
-    # if event.get("type") == "message" and "files" in event:
-    #  for f in event["files"]:
-    #     mimetype = f.get("mimetype", "")
-    #     print(f"📎 נמצא קובץ עם mimetype: {mimetype}")
-
-    #     if mimetype.startswith("audio/"):
-    #         audio_url = f.get("url_private")
-    #         print(f"🔗 קישור להורדה: {audio_url}")
-
-    #         message_id = event.get("client_msg_id") or event.get("ts")
-    #         print(f"📥 מתחיל לשמור הודעה קולית עם ID: {message_id}")
-
-    #         df = pd.DataFrame([{
-    #             "id": message_id,
-    #             "event_type": "voice_message",
-    #             "user_id": event.get("user"),
-    #             "channel_id": event.get("channel"),
-    #             "text": "[בתהליך תמלול]",
-    #             "ts": float(event.get("ts", 0)),
-    #             "parent_id": None,
-    #             "is_list": False,
-    #             "list_items": None,
-    #             "num_list_items": 0,
-    #             "raw": json.dumps(event)
-    #         }])
-    #         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
-    #         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
-
-    #         print("🚀 מפעיל תמלול קולית ברקע")
-    #         threading.Thread(
-    #             target=handle_voice_message_in_background,
-    #             args=(event, audio_url),
-    #             daemon=True
-    #         ).start()
-
-    #         return "", 200
-
-            # עד פה
+   
 
     if event.get("type") == "message" and event.get("subtype") == "message_deleted":
         deleted_message = event.get("previous_message", {})
@@ -461,11 +405,11 @@ def slack_events():
 
     if event.get("type") in ["reaction_added", "reaction_removed"]:
         item = event.get("item", {})
-
+        email= get_user_email(event.get("user"))
         df = pd.DataFrame([{
             "id": event.get("event_ts"),  # מזהה ייחודי של האירוע (הריאקציה)
             "event_type": event.get("type"),
-            "user_id": event.get("user"),
+            "user_id": email,
             "channel_id": item.get("channel"),
             "parent_id": item.get("ts"),  # ההודעה שאליה נוספה הריאקציה
             "text": event.get("reaction"),  # שם הריאקציה (למשל 'thumbsup')
