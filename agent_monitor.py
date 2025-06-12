@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import pandas as pd
 import re
 from datetime import datetime
@@ -11,6 +5,7 @@ from functools import reduce
 from tabulate import tabulate
 import uuid
 import psycopg2
+from thefuzz import fuzz
 
 # --- פונקציות חיבורים לדאטא בייס ---
 
@@ -127,27 +122,34 @@ def analyze_total_messages(slack_df):
     slack_df['date'] = pd.to_datetime(slack_df['ts'], unit='s').dt.date
     return slack_df.groupby(['user_id', 'date']).size().reset_index(name='total_messages')
 
+def normalize_user_ids(df):
+    """אם יש עמודת user – שנה את שמה ל־user_id"""
+    if 'user' in df.columns and 'user_id' not in df.columns:
+        df = df.rename(columns={'user': 'user_id'})
+    return df
+
 
 def analyze_help_requests(slack_df):
     """מזהה ומנתח בקשות עזרה מהודעות Slack, כולל זיהוי שגיאות כתיב."""
     help_keywords = [
         "עזרה", "בעיה", "שאלה", "לא מצליח", "נתקע", "תקוע",
         "איזה שלב", "איך ממשיכים", "מה עושים", "מישהו יכול לעזור",
-        "לא עובד", "משהו לא תקין", "צריך עזרה",
+        "לא עובד", "משהו לא תקין", "צריך עזרה","איך ממשיכים",
+        "איך מתקדם", "מה השלב הבא", "מה לעשות", "מה הבעיה",
         "help", "stuck", "issue", "problem", "need help", "can't", "error",
         "🆘", "❓", "🙋‍♀"
     ]
-
-    # שלב ראשון: ביטוי רגולרי
+    
+    # שלב ראשון: נזהה הודעות שמכילות ביטוי רגיל
     regex_pattern = '|'.join(map(re.escape, help_keywords))
-    basic_matches = slack_df['text'].str.contains(
-        regex_pattern, case=False, na=False)
+    basic_matches = slack_df['text'].str.contains(regex_pattern, case=False, na=False)
 
-    # שלב שני: זיהוי fuzzy
+    # שלב שני: נזהה הודעות עם שגיאות כתיב – לפי fuzzy match
     def fuzzy_contains_help(text):
         if not isinstance(text, str):
             return False
-        for word in text.split():
+        words = text.split()
+        for word in words:
             for keyword in help_keywords:
                 if fuzz.partial_ratio(word.lower(), keyword.lower()) >= 85:
                     return True
@@ -155,15 +157,12 @@ def analyze_help_requests(slack_df):
 
     fuzzy_matches = slack_df['text'].apply(fuzzy_contains_help)
 
-    # איחוד שני המסלולים
+    # שילוב שני המסלולים
     help_msgs = slack_df[basic_matches | fuzzy_matches].copy()
-    if help_msgs.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'text', 'ts', 'type'])
-
     help_msgs['type'] = 'help_request'
     help_msgs['date'] = pd.to_datetime(help_msgs['ts'], unit='s').dt.date
-    return help_msgs
 
+    return help_msgs
 
 def analyze_help_requests_count(slack_df):
     """סופר את מספר בקשות העזרה לכל משתמש ביום."""
@@ -451,7 +450,7 @@ def build_alerts(user_summary_df):
 def save_dataframe_to_db(df, table_name, conflict_columns=None):
     """שומר DataFrame לטבלה במסד הנתונים של Supabase, כולל עדכון במקרה של CONFLICT."""
     if df.empty:
-        print(f"⚠️ הטבלה {table_name} ריקה - לא נשמר כלום")
+        print(f"⚠ הטבלה {table_name} ריקה - לא נשמר כלום")
         return
 
     conn = get_db_connection()
@@ -507,40 +506,10 @@ def load_github_commits():
     conn.close()
     return df
 
-
-def load_github_issues():
-    conn = get_db_connection()
-    df = pd.read_sql("SELECT * FROM github_issues_raw", conn)
-    conn.close()
-    return df
-
-
-def load_github_prs():
-    conn = get_db_connection()
-    df = pd.read_sql("SELECT * FROM github_prs_raw", conn)
-    conn.close()
-    return df
-
-
-def load_github_reviews():
-    conn = get_db_connection()
-    df = pd.read_sql("SELECT * FROM github_reviews_raw", conn)
-    conn.close()
-    return df
-
-
-def normalize_user_ids(df):
-    """מאחדת עמודת user_id ע״י הסרת רווחים ו-type אחיד."""
-    if 'user_id' in df.columns:
-        df['user_id'] = df['user_id'].astype(
-            str).str.strip().str.replace(' ', '')
-    return df
-
-
 # ============================
 # 🧪 MAIN DEMO - הרצת דמו מלאה
 # ============================
-if __name__ == "__main__":
+def agent_monitor():
     print("🚀 מתחיל לנתח נתונים מ־Supabase...")
 
     try:
@@ -551,17 +520,16 @@ if __name__ == "__main__":
         print(f"📊 נטענו {len(slack_df)} הודעות מ-Slack")
 
         if slack_df.empty:
-            print("⚠️ לא נמצאו הודעות ב-Slack - מסיים")
-            exit()
+            print("⚠ לא נמצאו הודעות ב-Slack - מסיים")
+            return
 
         # replies_df מבוסס על slack_df
-        # parent_id מציין הודעות שהן תגובות
         replies_df = slack_df[slack_df['parent_id'].notna()].copy()
 
         # טוען דוחות סלאק, יחזיר DF עם עמודות גם אם הטבלה ריקה
         slack_reports_df = load_slack_reports()
 
-        # טוען נתוני GitHub, יחזיר DF עם עמודות גם אם הטבלאות ריקות
+        # טוען נתוני GitHub
         github_commits_df = load_github_commits()
         github_reviews_df = load_github_reviews()
         github_issues_df = load_github_issues()
@@ -579,21 +547,18 @@ if __name__ == "__main__":
             github_commits_df, github_reviews_df, github_issues_df
         )
 
-        # בונה סטטוס פרויקט יומי לאחר user_summary_df, מכיוון שהוא משתמש ב-active_contributors ממנו
         project_status_daily_df = build_project_status_daily(
-            # user_summary_df עבור active_users
             github_prs_df, github_issues_df, user_summary_df
         )
 
         alerts_df = build_alerts(user_summary_df)
 
-        # --- 3. הדפסת תוצאות (לצורך בדיקה ואימות) ---
+        # --- 3. הדפסת תוצאות ---
         print("\n📈 סיכום משתמשים יומי:")
         print(tabulate(user_summary_df.head(), headers='keys', tablefmt='grid'))
 
         print("\n📊 סיכום סטטוס פרויקט יומי:")
-        print(tabulate(project_status_daily_df.head(),
-                       headers='keys', tablefmt='grid'))
+        print(tabulate(project_status_daily_df.head(), headers='keys', tablefmt='grid'))
 
         print(f"\n🚨 נמצאו {len(alerts_df)} התראות")
 
@@ -609,3 +574,8 @@ if __name__ == "__main__":
         print(f"❌ שגיאה כללית: {e}")
         import traceback
         traceback.print_exc()
+
+
+# אם מריצים את הקובץ ישירות, הפעל את הפונקציה
+if __name__ == "__main__":
+    agent_monitor()
