@@ -13,23 +13,63 @@ import os
 
 LAST_PROCESSED_FILE = "last_processed.txt"
 
-def get_last_processed_date():
-    """קורא את התאריך האחרון שטופל מקובץ (אם קיים)."""
-    if os.path.exists(LAST_PROCESSED_FILE):
-        with open(LAST_PROCESSED_FILE, "r") as f:
-            try:
-                return datetime.fromisoformat(f.read().strip()).date()
-            except Exception as e:
-                print(f"⚠ שגיאה בקריאת תאריך אחרון: {e}")
-    return None  # אם לא נמצא תאריך קודם
-
-def set_last_processed_date(date_obj):
-    """שומר את התאריך האחרון שטופל לקובץ טקסט."""
-    with open(LAST_PROCESSED_FILE, "w") as f:
-        f.write(date_obj.isoformat())
+def load_filtered_github_commits():
+    df = load_github_commits()
+    last_ts = get_last_processed_time("github_commits_raw")
+    if last_ts:
+        df['ts_dt'] = pd.to_datetime(df['timestamp'])
+        df = df[df['ts_dt'] > last_ts].copy()
+        df = df.drop(columns=['ts_dt'])
+        print(f"🧹 סוננו קומיטים לפני {last_ts} - נותרו {len(df)}")
+    return df
+def load_filtered_github_issues():
+    df = load_github_issues()
+    last_ts = get_last_processed_time("github_issues_raw")
+    if last_ts:
+        df['ts_dt'] = pd.to_datetime(df['created_at'])
+        df = df[df['ts_dt'] > last_ts].copy()
+        df = df.drop(columns=['ts_dt'])
+        print(f"🧹 סוננו Issues לפני {last_ts} - נותרו {len(df)}")
+    return df
+def load_filtered_github_reviews():
+    df = load_github_reviews()
+    last_ts = get_last_processed_time("github_reviews_raw")
+    if last_ts:
+        df['ts_dt'] = pd.to_datetime(df['created_at'])
+        df = df[df['ts_dt'] > last_ts].copy()
+        df = df.drop(columns=['ts_dt'])
+        print(f"🧹 סוננו Reviews לפני {last_ts} - נותרו {len(df)}")
+    return df
+def load_filtered_github_prs():
+    df = load_github_prs()
+    last_ts = get_last_processed_time("github_prs_raw")
+    if last_ts:
+        df['ts_dt'] = pd.to_datetime(df['created_at'])
+        df = df[df['ts_dt'] > last_ts].copy()
+        df = df.drop(columns=['ts_dt'])
+        print(f"🧹 סוננו PRs לפני {last_ts} - נותרו {len(df)}")
+    return df
 
 # --- פונקציות חיבורים לדאטא בייס ---
+def update_last_processed_time(table_name, last_time):
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO agent_progress (table_name, last_processed_at)
+            VALUES (%s, %s)
+            ON CONFLICT (table_name)
+            DO UPDATE SET last_processed_at = EXCLUDED.last_processed_at
+        """, (table_name, last_time))
+        conn.commit()
+    conn.close()
 
+def get_last_processed_time(table_name):
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT last_processed_at FROM agent_progress WHERE table_name = %s", (table_name,))
+        result = cur.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 def get_db_connection():
     """מקים חיבור למסד הנתונים של Supabase."""
@@ -57,16 +97,15 @@ def load_slack_messages():
         conn.close()
 
 def load_filtered_slack_messages():
-    """טוען הודעות Slack מסוננות לפי התאריך האחרון שטופל ומסנן הודעות שנמחקו."""
+    """טוען הודעות Slack מסוננות לפי תאריך אחרון שטופל מהטבלה agent_progress."""
     df = load_slack_messages()
-    last_date = get_last_processed_date()
+    last_ts = get_last_processed_time("slack_messages_raw")
 
-    if last_date:
-        # המרת timestamp ל־datetime ואז ל־date
-        df['ts_date'] = pd.to_datetime(df['ts'], unit='s').dt.date
-        df = df[df['ts_date'] > last_date].copy()
-        print(f"🧹 סוננו הודעות לפני {last_date} - נותרו {len(df)}")
-        df = df.drop(columns=['ts_date'])
+    if last_ts:
+        df['ts_dt'] = pd.to_datetime(df['ts'], unit='s')
+        df = df[df['ts_dt'] > last_ts].copy()
+        print(f"🧹 סוננו הודעות לפני {last_ts} - נותרו {len(df)}")
+        df = df.drop(columns=['ts_dt'])
 
     # סינון הודעות שנמחקו
     if 'deleted' in df.columns:
@@ -224,7 +263,7 @@ def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_is
         replies_count = pd.DataFrame(columns=['parent_id', 'num_replies'])
 
     messages = messages_df.merge(
-        replies_count, how='left', left_on='id', right_on='parent_id')
+        replies_count, how='left', left_on='id', righFt_on='parent_id')
     messages['num_replies'] = messages['num_replies'].fillna(0)
 
     def is_resolved(row):
@@ -579,11 +618,10 @@ def agent_monitor():
         slack_reports_df = load_slack_reports()
 
         # טוען נתוני GitHub
-        github_commits_df = load_github_commits()
-        github_reviews_df = load_github_reviews()
-        github_issues_df = load_github_issues()
-        github_prs_df = load_github_prs()
-
+        github_commits_df = load_filtered_github_commits()
+        github_reviews_df = load_filtered_github_reviews()
+        github_issues_df = load_filtered_github_issues()
+        github_prs_df = load_filtered_github_prs()
         print(f"📊 נטענו {len(github_issues_df)} גיליונות מ-GitHub")
         print(f"📊 נטענו {len(github_commits_df)} קומיטים מ-GitHub")
         print(f"📊 נטענו {len(github_reviews_df)} ביקורות מ-GitHub")
@@ -599,11 +637,33 @@ def agent_monitor():
             github_issues_df,
             github_prs_df
         )
+        # שמירה לפי תאריך מקסימלי עבור כל טבלה
+
+        if not github_commits_df.empty:
+           latest_commits = pd.to_datetime(github_commits_df['timestamp']).max()
+           update_last_processed_time("github_commits_raw", latest_commits)
+
+        if not github_reviews_df.empty:
+          latest_reviews = pd.to_datetime(github_reviews_df['created_at']).max()
+          update_last_processed_time("github_reviews_raw", latest_reviews)
+
+        if not github_issues_df.empty:
+         latest_issues = pd.to_datetime(github_issues_df['created_at']).max()
+         update_last_processed_time("github_issues_raw", latest_issues)
+
+        if not github_prs_df.empty:
+            latest_prs = pd.to_datetime(github_prs_df['created_at']).max()
+            update_last_processed_time("github_prs_raw", latest_prs)
 
         # --- 3. עדכון תאריך אחרון שטופל (לפני שמירה) ---
         if not user_summary_df.empty:
             latest_date = user_summary_df['day'].max()
-            set_last_processed_date(latest_date)
+            if not user_summary_df.empty:
+              latest_ts = slack_df['ts'].max()
+            latest_dt = datetime.fromtimestamp(float(latest_ts))
+            update_last_processed_time("slack_messages_raw", latest_dt)
+            print(f"🕓 עודכן התאריך האחרון שטופל בטבלה agent_progress: {latest_dt}")
+
             print(f"🕓 נשמר תאריך אחרון שטופל: {latest_date}")
 
 
