@@ -13,6 +13,7 @@ import os
 
 LAST_PROCESSED_FILE = "last_processed.txt"
 
+
 def load_filtered_github_commits():
     df = load_github_commits()
     last_ts = get_last_processed_time("github_commits_raw")
@@ -22,6 +23,8 @@ def load_filtered_github_commits():
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו קומיטים לפני {last_ts} - נותרו {len(df)}")
     return df
+
+
 def load_filtered_github_issues():
     df = load_github_issues()
     last_ts = get_last_processed_time("github_issues_raw")
@@ -31,6 +34,8 @@ def load_filtered_github_issues():
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו Issues לפני {last_ts} - נותרו {len(df)}")
     return df
+
+
 def load_filtered_github_reviews():
     df = load_github_reviews()
     last_ts = get_last_processed_time("github_reviews_raw")
@@ -40,6 +45,8 @@ def load_filtered_github_reviews():
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו Reviews לפני {last_ts} - נותרו {len(df)}")
     return df
+
+
 def load_filtered_github_prs():
     df = load_github_prs()
     last_ts = get_last_processed_time("github_prs_raw")
@@ -51,6 +58,8 @@ def load_filtered_github_prs():
     return df
 
 # --- פונקציות חיבורים לדאטא בייס ---
+
+
 def update_last_processed_time(table_name, last_time):
     conn = get_db_connection()
     with conn.cursor() as cur:
@@ -63,13 +72,16 @@ def update_last_processed_time(table_name, last_time):
         conn.commit()
     conn.close()
 
+
 def get_last_processed_time(table_name):
     conn = get_db_connection()
     with conn.cursor() as cur:
-        cur.execute("SELECT last_processed_at FROM agent_progress WHERE table_name = %s", (table_name,))
+        cur.execute(
+            "SELECT last_processed_at FROM agent_progress WHERE table_name = %s", (table_name,))
         result = cur.fetchone()
     conn.close()
     return result[0] if result else None
+
 
 def get_db_connection():
     """מקים חיבור למסד הנתונים של Supabase."""
@@ -96,6 +108,7 @@ def load_slack_messages():
     finally:
         conn.close()
 
+
 def load_filtered_slack_messages():
     """טוען הודעות Slack מסוננות לפי תאריך אחרון שטופל מהטבלה agent_progress."""
     df = load_slack_messages()
@@ -114,7 +127,6 @@ def load_filtered_slack_messages():
         print(f"🗑 סוננו {before - len(df)} הודעות שנמחקו")
 
     return df
-
 
 
 def load_slack_reports():
@@ -263,7 +275,7 @@ def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_is
         replies_count = pd.DataFrame(columns=['parent_id', 'num_replies'])
 
     messages = messages_df.merge(
-        replies_count, how='left', left_on='id', righFt_on='parent_id')
+        replies_count, how='left', left_on='id', right_on='parent_id')
     messages['num_replies'] = messages['num_replies'].fillna(0)
 
     def is_resolved(row):
@@ -398,7 +410,8 @@ def build_user_daily_summary(slack_df, replies_df, slack_reports_df,
     dfs = [
         analyze_total_messages(slack_df),
         analyze_help_requests_count(slack_df),
-        analyze_stuck_status(slack_df, replies_df, slack_reports_df, github_issues_df),
+        analyze_stuck_status(slack_df, replies_df,
+                             slack_reports_df, github_issues_df),
         analyze_completed_tasks(github_issues_df),
         analyze_open_tasks(github_issues_df),
         analyze_commits(github_commits_df),
@@ -408,7 +421,8 @@ def build_user_daily_summary(slack_df, replies_df, slack_reports_df,
 
     # מיזוג כל הטבלאות לפי user_id + date
     user_summary_df = reduce(
-        lambda left, right: pd.merge(left, right, on=['user_id', 'date'], how='outer'),
+        lambda left, right: pd.merge(
+            left, right, on=['user_id', 'date'], how='outer'),
         dfs
     ).fillna(0)
 
@@ -600,7 +614,6 @@ def agent_monitor():
     time.sleep(10)
     try:
 
-
         # --- 1. טעינת כל ה-DataFrames הנדרשים ממסד הנתונים ---
         from slack_deletion_sync import load_filtered_slack_messages
         slack_df = load_filtered_slack_messages()
@@ -640,16 +653,19 @@ def agent_monitor():
         # שמירה לפי תאריך מקסימלי עבור כל טבלה
 
         if not github_commits_df.empty:
-           latest_commits = pd.to_datetime(github_commits_df['timestamp']).max()
-           update_last_processed_time("github_commits_raw", latest_commits)
+            latest_commits = pd.to_datetime(
+                github_commits_df['timestamp']).max()
+            update_last_processed_time("github_commits_raw", latest_commits)
 
         if not github_reviews_df.empty:
-          latest_reviews = pd.to_datetime(github_reviews_df['created_at']).max()
-          update_last_processed_time("github_reviews_raw", latest_reviews)
+            latest_reviews = pd.to_datetime(
+                github_reviews_df['created_at']).max()
+            update_last_processed_time("github_reviews_raw", latest_reviews)
 
         if not github_issues_df.empty:
-         latest_issues = pd.to_datetime(github_issues_df['created_at']).max()
-         update_last_processed_time("github_issues_raw", latest_issues)
+            latest_issues = pd.to_datetime(
+                github_issues_df['created_at']).max()
+            update_last_processed_time("github_issues_raw", latest_issues)
 
         if not github_prs_df.empty:
             latest_prs = pd.to_datetime(github_prs_df['created_at']).max()
@@ -659,13 +675,13 @@ def agent_monitor():
         if not user_summary_df.empty:
             latest_date = user_summary_df['day'].max()
             if not user_summary_df.empty:
-              latest_ts = slack_df['ts'].max()
+                latest_ts = slack_df['ts'].max()
             latest_dt = datetime.fromtimestamp(float(latest_ts))
             update_last_processed_time("slack_messages_raw", latest_dt)
-            print(f"🕓 עודכן התאריך האחרון שטופל בטבלה agent_progress: {latest_dt}")
+            print(
+                f"🕓 עודכן התאריך האחרון שטופל בטבלה agent_progress: {latest_dt}")
 
             print(f"🕓 נשמר תאריך אחרון שטופל: {latest_date}")
-
 
         project_status_daily_df = build_project_status_daily(
             github_prs_df, github_issues_df, user_summary_df
@@ -710,7 +726,6 @@ def agent_monitor():
         print(f"❌ שגיאה כללית: {e}")
         import traceback
         traceback.print_exc()
-    
 
 
 # אם מריצים את הקובץ ישירות, הפעל את הפונקציה
