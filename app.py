@@ -88,10 +88,17 @@ def save_dataframe_to_db(df, table_name, pk_column):
                 INSERT INTO {table_name} ({cols}) VALUES ({placeholders})
                 ON CONFLICT ({pk_column}) DO UPDATE SET {update_cols}
             """
+            print("==============================================================")
+            print(sql)
+            print("==============================================================")
             cursor.execute(sql, tuple(row))
 
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
+        threading.Thread(
+            agent_monitor,
+            daemon=True,
+        ).start()
         
            
     except Exception as e:
@@ -225,7 +232,7 @@ def slack_events():
 
         df = pd.DataFrame([[
             event.get("client_msg_id") or event.get("ts"),
-            "list",
+            "message",
             email,
             event.get("channel"),
             json_data,
@@ -234,16 +241,13 @@ def slack_events():
             True,
             json_data,
             event.get("files", [{}])[0].get("list_limits", {}).get("row_count", 0),
-            True
+            json.dumps({})
         ]], columns=slack_message_columns)
         
         df_filtered = filter_columns_for_table(df, 'slack_messages_raw')
         save_dataframe_to_db(df_filtered, 'slack_messages_raw', PRIMARY_KEYS['slack_messages_raw'])
         print("📋 Slack list saved to DB")
-        threading.Thread(
-            agent_monitor,
-            daemon=True,
-        ).start()
+       
         
         return "", 200
     
