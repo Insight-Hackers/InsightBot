@@ -21,83 +21,6 @@ if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
-# הוספה אם לא יעבוד נמחק
-
-
-# def handle_voice_message_in_background(event, audio_url):
-#     print("🎙 התחלת טיפול בהודעה קולית")
-
-#     transcription = transcribe_audio_from_url(audio_url)
-#     print(f"📄 תוצאה מהתמלול: {transcription}")
-
-#     if transcription is None:
-#         transcription = "[שגיאה בתמלול]"
-
-#     msg_id = event.get("client_msg_id") or event.get("ts")
-#     print(f"🆔 מזהה הודעה לעדכון: {msg_id}")
-
-#     conn = get_db_connection()
-#     cursor = conn.cursor()
-#     try:
-#         cursor.execute("""
-#             UPDATE slack_messages_raw
-#             SET text = %s, event_type = %s
-#             WHERE id = %s
-#         """, (
-#             transcription,
-#             "voice_message_transcribed",
-#             str(msg_id)
-#         ))
-#         conn.commit()
-#         print("🗣 תמלול הוכנס לשורה קיימת במסד")
-#     except Exception as e:
-#         print("❌ שגיאה בעדכון תמלול למסד:", e)
-#         conn.rollback()
-#     finally:
-#         cursor.close()
-#         conn.close()
-
-
-# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# def transcribe_audio_from_url(audio_url):
-#     print(f"🌐 מנסה להוריד קובץ קול מכתובת: {audio_url}")
-#     try:
-#         slack_token = os.getenv('SLACK_BOT_TOKEN')
-#         if not slack_token:
-#             print("🚫 SLACK_BOT_TOKEN לא מוגדר")
-#             return "[שגיאה בתמלול - אין טוקן]"
-
-#         headers = {'Authorization': f"Bearer {slack_token}"}
-#         response = requests.get(audio_url, headers=headers)
-
-#         print(f"📥 סטטוס הורדה: {response.status_code}")
-#         print(f"📦 גודל קובץ: {len(response.content)} bytes")
-
-#         if response.status_code != 200:
-#             print(f"❌ שגיאה בהורדת הקובץ הקולי: {response.status_code}")
-#             return "[שגיאה בהורדה]"
-
-#         audio_file = BytesIO(response.content)
-#         audio_file.name = "audio.m4a"
-
-#         # כאן נכנסות בדיוק שלוש השורות שלך:
-#         transcript = client.audio.transcriptions.create(
-#             model="whisper-1",
-#             file=audio_file,
-#             language="he"
-#         )
-#         text = transcript.text
-
-#         print("✅ תמלול הושלם:", text)
-#         return text if text else "[לא זוהה דיבור בתמלול]"
-
-#     except Exception as e:
-#         print("❌ חריג במהלך התמלול:", e)
-#         return "[שגיאה בתמלול]"
-
-
-# ע ד פה
 
 
 def get_db_connection():
@@ -167,8 +90,7 @@ def save_dataframe_to_db(df, table_name, pk_column):
 
         conn.commit()
         print(f"✅ נשמרו {len(df)} שורות לטבלה {table_name}")
-        monitor = agent_monitor()
-        monitor.main()
+        
            
     except Exception as e:
         print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
@@ -267,9 +189,16 @@ def slack_events():
     data = request.json
     print("📥 Slack event received:")
     print(json.dumps(data, indent=2))
-
+    # yafit
     event = data.get("event", {})
-
+    if (event.get("type") == "message" and event.get("subtype") == "file_share" and "files" in event):
+      for f in event["files"]:
+         if f.get("filetype") == "list" and f.get("mode") == "list":
+             print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
+             # 👇 כאן תכתבי את הקוד שיטפל בזה
+             return "", 200
+    #finish
+    
     # 🎯 הודעה מסוג message עם קובץ רשימה
     if event.get("type") == "message" and "files" in event:
         print("📎 we are clever")
@@ -482,6 +411,7 @@ def slack_events():
     print("✅ Slack message נשמר למסד")
 
     return "", 200
+
 
 
 @app.route("/github/webhook", methods=["POST"])
