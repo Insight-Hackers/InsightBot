@@ -216,15 +216,6 @@ slack_message_columns = [
     "raw"
 ]
 
-def extract_list_items(text):
-            if not isinstance(text, str):
-                return None
-            lines = text.splitlines()
-            items = []
-            for line in lines:
-                if line.strip().startswith(("* ", "- ", "• ")):
-                    items.append(line[2:].strip())
-            return items if items else None
 
 def get_user_email(user_id):
     slack_token = os.getenv("api_token")
@@ -321,6 +312,17 @@ def slack_events():
 
                 print("📋 Slack list saved to DB")
                 return "", 200
+            
+    def extract_list_items(text):
+            if not isinstance(text, str):
+                return None
+            lines = text.splitlines()
+            items = []
+            for line in lines:
+                if line.strip().startswith(("* ", "- ", "• ")):
+                    items.append(line[2:].strip())
+            return items if items else None
+
 
     # ✉️ הודעת טקסט רגילה (כולל בדיקת רשימות)
     if event.get("type") == "message":
