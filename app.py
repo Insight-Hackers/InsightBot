@@ -143,9 +143,11 @@ def save_dataframe_to_db(df, table_name, pk_column):
         # 🛠 תיקון מרכזי: להמיר כל NaT / NaN ל־None
         df = df.where(pd.notnull(df), None)
 
+      # המרת NaT לערכי None בפועל
         for column in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[column]):
-                df[column] = df[column].where(df[column].notna(), None)
+                df[column] = df[column].astype(
+                    object).where(df[column].notna(), None)
             elif pd.api.types.is_object_dtype(df[column]):
                 df[column] = df[column].apply(
                     lambda x: str(x) if x is not None else None)
