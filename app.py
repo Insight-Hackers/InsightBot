@@ -217,6 +217,15 @@ slack_message_columns = [
 ]
 import os
 import requests
+def extract_list_items(text):
+            if not isinstance(text, str):
+                return None
+            lines = text.splitlines()
+            items = []
+            for line in lines:
+                if line.strip().startswith(("* ", "- ", "• ")):
+                    items.append(line[2:].strip())
+            return items if items else None
 
 def get_user_email(user_id):
     slack_token = os.getenv("api_token")
@@ -263,7 +272,7 @@ def slack_events():
     data = request.json
     print("📥 Slack event received:")
     print(json.dumps(data, indent=2))
-
+    #list
     event = data.get("event", {})
     if event.get("type") == "message" and "files" in event:
         print("📎 we are clever")
@@ -334,30 +343,21 @@ def slack_events():
                 print("📄 Text snippet saved to DB")
                 return "", 200
 
-        def extract_list_items(text):
-            if not isinstance(text, str):
-                return None
-            lines = text.splitlines()
-            items = []
-            for line in lines:
-                if line.strip().startswith(("* ", "- ", "• ")):
-                    items.append(line[2:].strip())
-            return items if items else None
-
+    
         text = event.get("text", "")
         list_items = extract_list_items(text)
         is_list = bool(list_items)
         num_list_items = len(list_items) if list_items else 0
+        email= get_user_email(event.get("user"))
 
         df = pd.DataFrame([[
             event.get("client_msg_id") or event.get("ts"),
             "message",
-            event.get("user"),
+            email,
             event.get("channel"),
             text,
             float(event.get("ts", 0)),
-            event.get("thread_ts") if event.get(
-                "thread_ts") != event.get("ts") else None,
+            event.get("thread_ts") if event.get(00+1+"thread_ts") != event.get("ts") else None,
             is_list,
             list_items,
             num_list_items,
