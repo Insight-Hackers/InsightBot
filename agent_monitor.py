@@ -1,3 +1,4 @@
+from datetime import timezone
 import pandas as pd
 import re
 from datetime import datetime
@@ -658,9 +659,109 @@ def save_dataframe_to_db(df, table_name, conflict_columns=None):
     # return df
 
 
-# ============================
-# 🧪 MAIN DEMO - הרצת דמו מלאה
-# ============================
+def build_alerts_v2(user_summary_df, github_prs_df, github_reviews_df, github_issues_df):
+    """יוצר התראות חכמות ובעלות ערך עסקי מתוך כלל הנתונים הזמינים."""
+    alerts = []
+    today = datetime.now(timezone.utc).date()
+
+    # ✅ תיקון: לשם אחידות משתמשים ב־user_id (העמודה תועתק מ-canonical_username)
+    user_summary_df = user_summary_df.rename(
+        columns={"canonical_username": "user_id"})
+
+    # 1. PR פתוח מעל 3 ימים וללא ביקורת
+    if not github_prs_df.empty:
+        github_prs_df['created_date'] = pd.to_datetime(
+            github_prs_df['created_at']).dt.date
+        github_prs_df['days_open'] = (
+            today - github_prs_df['created_date']).dt.days
+        open_prs = github_prs_df[(github_prs_df['state'] == 'open') & (
+            github_prs_df['days_open'] > 3)]
+        reviewed_pr_ids = set(
+            github_reviews_df['pull_request_id']) if not github_reviews_df.empty else set()
+
+        for _, row in open_prs.iterrows():
+            if row['id'] not in reviewed_pr_ids:
+                alerts.append({
+                    'id': str(uuid.uuid4()),
+                    'user_id': row['user_id'],
+                    'type': 'unreviewed_pr',
+                    'message': f"PR של {row['user_id']} פתוח כבר {row['days_open']} ימים ללא בדיקה.",
+                    'severity': 'high',
+                    'created_at': today
+                })
+
+    # 2. חוסר פעילות של יומיים רצופים לפחות
+    user_summary_df_sorted = user_summary_df.sort_values(['user_id', 'day'])
+    grouped = user_summary_df_sorted.groupby('user_id')
+
+    for user, group in grouped:
+        group = group.set_index('day').sort_index()
+        group['activity'] = group[['total_messages', 'commits',
+                                   'reviews', 'completed_tasks']].sum(axis=1)
+        inactive_days = group['activity'] == 0
+        if inactive_days.empty:
+            continue
+        max_consec = (inactive_days != inactive_days.shift()).cumsum()
+        counts = inactive_days.groupby(max_consec).sum()
+        if (counts >= 2).any():
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': user,
+                'type': 'inactive_multiple_days',
+                'message': f"{user} לא ביצע כל פעולה במשך לפחות יומיים רצופים.",
+                'severity': 'medium',
+                'created_at': today
+            })
+
+    # 3. בקשות עזרה ללא מענה
+    if 'help_requests' in user_summary_df.columns and 'resolved' in user_summary_df.columns:
+        help_issues = user_summary_df[(user_summary_df['help_requests'] >= 2) & (
+            user_summary_df['resolved'] == 0)]
+        for _, row in help_issues.iterrows():
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'unanswered_help_repeated',
+                'message': f"{row['user_id']} ביקש עזרה {row['help_requests']} פעמים ביום {row['day']} ללא מענה.",
+                'severity': 'high',
+                'created_at': row['day']
+            })
+
+    # 4. משתמש עם עומס יתר בפעילות
+    user_summary_df['total_actions'] = user_summary_df[[
+        'total_messages', 'commits', 'reviews', 'pull_requests', 'help_requests'
+    ]].sum(axis=1)
+
+    overloaded_users = user_summary_df[user_summary_df['total_actions'] >= 15]
+    for _, row in overloaded_users.iterrows():
+        alerts.append({
+            'id': str(uuid.uuid4()),
+            'user_id': row['user_id'],
+            'type': 'overloaded_user',
+            'message': f"{row['user_id']} ביצע {row['total_actions']} פעולות ביום אחד ({row['day']}).",
+            'severity': 'medium',
+            'created_at': row['day']
+        })
+
+    # 5. Issue קריטית פתוחה
+    if not github_issues_df.empty:
+        github_issues_df['created_date'] = pd.to_datetime(
+            github_issues_df['created_at']).dt.date
+        critical_issues = github_issues_df[
+            (github_issues_df['is_critical'] == True) &
+            (github_issues_df['state'] == 'open')
+        ]
+        for _, row in critical_issues.iterrows():
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'critical_issue_unresolved',
+                'message': f"Issue קריטית נפתחה ע״י {row['user_id']} ביום {row['created_date']} ועדיין פתוחה.",
+                'severity': 'high',
+                'created_at': row['created_date']
+            })
+
+    return pd.DataFrame(alerts)
 
 
 def agent_monitor():
@@ -754,7 +855,12 @@ def agent_monitor():
             github_prs_df, github_issues_df, user_summary_df
         )
 
-        alerts_df = build_alerts(user_summary_df)
+        alerts_df = build_alerts_v2(
+            user_summary_df,
+            github_prs_df,
+            github_reviews_df,
+            github_issues_df
+        )
 
         # --- 3. הדפסת תוצאות ---
         print("\n📈 סיכום משתמשים יומי:")
@@ -783,10 +889,9 @@ def agent_monitor():
 
 # המשך שמירה
         save_dataframe_to_db(
-            user_summary_df.rename(
-                columns={"canonical_username": "user_id"}),  # שינוי שם בעותק
+            user_summary_df,  # לא לשנות שם עמודה כאן
             'user_daily_summary',
-            conflict_columns=['user_id', 'day']
+            conflict_columns=['canonical_username', 'day']
         )
 
         save_dataframe_to_db(project_status_daily_df, 'project_status_daily')
