@@ -25,6 +25,14 @@ if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
 
+DB_CONFIG = {
+    'dbname': 'postgres',
+    'user': 'postgres.apphxbmngxlclxromyvt',
+    'password': 'insightbot2025',
+    'host': 'aws-0-eu-north-1.pooler.supabase.com',
+    'port': 6543
+}
+
 
 def get_db_connection():
     try:
@@ -669,20 +677,18 @@ def normalize_monday_items(items_data):
     return pd.DataFrame(rows)
 
 
-def save_dataframe_to_db(df, table_name):
-    conn = psycopg2.connect(**DB_CONFIG)
+def save_dataframe_to_db(df, table_name, date_column=None):
+    conn = get_db_connection()
     cur = conn.cursor()
+
+    if date_column and date_column in df.columns:
+        df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
 
     for _, row in df.iterrows():
         cur.execute(f'''
-            INSERT INTO {table_name} ("Name", "Assigned Team", "Status", "Dependency")
-            VALUES (%s, %s, %s, %s)
-        ''', (
-            row.get("Name"),
-            row.get("Assigned Team"),
-            row.get("Status"),
-            row.get("Dependency")
-        ))
+            INSERT INTO {table_name} ({','.join(f'"{col}"' for col in df.columns)})
+            VALUES ({','.join(['%s'] * len(df.columns))})
+        ''', tuple(row))
 
     conn.commit()
     cur.close()
