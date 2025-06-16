@@ -653,6 +653,8 @@ def get_monday_board_data():
     }
     response = requests.post(url, headers=headers, json=query)
     data = response.json()
+    print("📥 Monday raw response:", response.text)
+
     return data['data']['boards'][0]['items']
 
 
@@ -694,6 +696,7 @@ def monday_import():
         df = normalize_monday_items(items)
         print("📊 עמודות שהגיעו:", df.columns.tolist())
         save_dataframe_to_db(df, "monday_board_raw")
+
         return {"status": "success", "rows": len(df)}
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
