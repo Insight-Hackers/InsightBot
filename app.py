@@ -18,7 +18,8 @@ from agent_monitor import agent_monitor
 load_dotenv()
 
 app = Flask(__name__)
-
+MONDAY_API_KEY = os.getenv("MONDAY_API_KEY")
+BOARD_ID = 1963586405
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
@@ -631,77 +632,71 @@ def github_webhook():
     return "", 200
 
 
-def fetch_all_monday_items(board_id):
+def get_monday_board_data():
     url = "https://api.monday.com/v2"
     headers = {
-        "Authorization": os.getenv("MONDAY_API_KEY"),
-        "Content-Type": "application/json"
+        "Authorization": MONDAY_API_KEY
     }
-
-    query = """
-    query ($boardId: Int!) {
-      boards(ids: [$boardId]) {
-        name
-        items {
-          id
-          name
-          created_at
-          updated_at
-          column_values {
-            id
-            title
-            text
-          }
-        }
-      }
+    query = {
+        'query': f'''{{
+            boards(ids: {BOARD_ID}) {{
+                items {{
+                    name
+                    column_values {{
+                        id
+                        title
+                        text
+                    }}
+                }}
+            }}
+        }}'''
     }
-    """
-    variables = {"boardId": board_id}
-
-    response = requests.post(
-        url,
-        headers=headers,
-        json={"query": query, "variables": variables}
-    )
-
+    response = requests.post(url, headers=headers, json=query)
     data = response.json()
     return data['data']['boards'][0]['items']
 
 
-def normalize_monday_items(items):
+def normalize_monday_items(items_data):
     rows = []
-    for item in items:
-        row = {
-            "id": item["id"],
-            "name": item["name"],
-            "created_at": item.get("created_at"),
-            "updated_at": item.get("updated_at")
-        }
+    for item in items_data:
+        row = {"Name": item["name"]}
         for col in item["column_values"]:
-            title = col.get("title")
-            text = col.get("text")
-            if title:
-                row[title] = text
+            if col["title"] in ["Assigned Team", "Status", "Dependency"]:
+                row[col["title"]] = col.get("text")
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def save_dataframe_to_db(df, table_name):
+    conn = psycopg2.connect(**DB_CONFIG)
+    cur = conn.cursor()
+
+    for _, row in df.iterrows():
+        cur.execute(f'''
+            INSERT INTO {table_name} ("Name", "Assigned Team", "Status", "Dependency")
+            VALUES (%s, %s, %s, %s)
+        ''', (
+            row.get("Name"),
+            row.get("Assigned Team"),
+            row.get("Status"),
+            row.get("Dependency")
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 @app.route("/monday/import", methods=["POST"])
 def monday_import():
     try:
-        # ברירת מחדל אם לא נשלח פרמטר
-        board_id = int(request.args.get("board_id", 1963586405))
-        items = fetch_all_monday_items(board_id)
+        items = get_monday_board_data()
         df = normalize_monday_items(items)
-
-        df = df.where(pd.notnull(df), None)
-
-        save_dataframe_to_db(df, "monday_board_raw", "id")
-        return f"✅ נשמרו {len(df)} רשומות ממנדיי", 200
+        print("📊 עמודות שהגיעו:", df.columns.tolist())
+        save_dataframe_to_db(df, "monday_board_raw")
+        return {"status": "success", "rows": len(df)}
     except Exception as e:
-        print("❌ שגיאה ביבוא ממנדיי:", e)
-        traceback.print_exc()
-        return "❌ שגיאה ביבוא", 500
+        return {"status": "error", "message": str(e)}, 500
 
 
 if __name__ == "__main__":
