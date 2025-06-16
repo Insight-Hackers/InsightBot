@@ -631,7 +631,81 @@ def github_webhook():
     return "", 200
 
 
+def fetch_all_monday_items(board_id):
+    url = "https://api.monday.com/v2"
+    headers = {
+        "Authorization": os.getenv("MONDAY_API_KEY"),
+        "Content-Type": "application/json"
+    }
+
+    query = """
+    query ($boardId: Int!) {
+      boards(ids: [$boardId]) {
+        name
+        items {
+          id
+          name
+          created_at
+          updated_at
+          column_values {
+            id
+            title
+            text
+          }
+        }
+      }
+    }
+    """
+    variables = {"boardId": board_id}
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json={"query": query, "variables": variables}
+    )
+
+    data = response.json()
+    return data['data']['boards'][0]['items']
+
+
+def normalize_monday_items(items):
+    rows = []
+    for item in items:
+        row = {
+            "id": item["id"],
+            "name": item["name"],
+            "created_at": item.get("created_at"),
+            "updated_at": item.get("updated_at")
+        }
+        for col in item["column_values"]:
+            title = col.get("title")
+            text = col.get("text")
+            if title:
+                row[title] = text
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+@app.route("/monday/import", methods=["POST"])
+def monday_import():
+    try:
+        # ברירת מחדל אם לא נשלח פרמטר
+        board_id = int(request.args.get("board_id", 1963586405))
+        items = fetch_all_monday_items(board_id)
+        df = normalize_monday_items(items)
+
+        df = df.where(pd.notnull(df), None)
+
+        save_dataframe_to_db(df, "monday_board_raw", "id")
+        return f"✅ נשמרו {len(df)} רשומות ממנדיי", 200
+    except Exception as e:
+        print("❌ שגיאה ביבוא ממנדיי:", e)
+        traceback.print_exc()
+        return "❌ שגיאה ביבוא", 500
+
+
 if __name__ == "__main__":
+
     port = int(os.getenv("PORT", 10000))
     print(f"✅ הקובץ app.py התחיל לרוץ ב-port {port}")
     app.run(host="0.0.0.0", port=port)
