@@ -671,7 +671,8 @@ def build_alerts_v2(user_summary_df, github_prs_df, github_reviews_df, github_is
     # 1. PR פתוח מעל 3 ימים וללא ביקורת
     if not github_prs_df.empty:
         github_prs_df['created_date'] = pd.to_datetime(
-            github_prs_df['created_at']).dt.date
+            github_prs_df['created_at'], errors='coerce')
+
         github_prs_df['days_open'] = (
             today - github_prs_df['created_date']).dt.days
         open_prs = github_prs_df[(github_prs_df['state'] == 'open') & (
