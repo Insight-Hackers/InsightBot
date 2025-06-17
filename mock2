@@ -90,7 +90,7 @@ if __name__ == "__main__":
     
     
 
-    )
+    
 
 # ---------- Slack messages (user_1 + user_2) ----------
 def insert_slack_messages(conn):
