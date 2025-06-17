@@ -139,7 +139,7 @@ PRIMARY_KEYS = {
     'github_reviews_raw': 'id',
     'slack_reports_raw': 'id',
     # Composite key in DB, כאן עשוי להיות צורך בהתאמה מיוחדת
-    'user_daily_summary': 'user_id',
+    'user_daily_summary': ['user_id', 'day'],
 }
 slack_message_columns = [
     "id",
