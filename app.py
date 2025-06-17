@@ -674,7 +674,7 @@ def normalize_monday_items(items_data):
     return pd.DataFrame(rows)
 
 
-def save_dataframe_to_db(df, table_name):
+def save_monday_dataframe_to_db(df, table_name):
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
 
@@ -700,7 +700,7 @@ def monday_import():
         items = get_monday_board_data()
         df = normalize_monday_items(items)
         print("📊 עמודות שהגיעו:", df.columns.tolist())
-        save_dataframe_to_db(df, "monday_board_raw")
+        save_monday_dataframe_to_db(df, "monday_board_raw")
 
         return {"status": "success", "rows": len(df)}
     except Exception as e:
