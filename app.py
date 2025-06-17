@@ -73,21 +73,20 @@ def save_dataframe_to_db(df, table_name, pk_column):
         print(f"⚠ הטבלה {table_name} ריקה - לא נשמר כלום")
         return
 
+    # 🛠 ניקוי כל NaT ו-NaN כולל המרת 'NaT' (string) ל-None
+    df = df.where(pd.notnull(df), None)
+
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].apply(
+                lambda x: None if pd.isna(x) or str(x) == 'NaT' else x)
+        elif pd.api.types.is_object_dtype(df[col]):
+            df[col] = df[col].apply(lambda x: None if x in [
+                                    'NaT', 'nan', '', None] else str(x))
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # 🛠 תיקון מרכזי: להמיר כל NaT / NaN ל־None
-        df = df.where(pd.notnull(df), None)
-
-      # המרת NaT לערכי None בפועל
-        for column in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[column]):
-                df[column] = df[column].astype(
-                    object).where(df[column].notna(), None)
-            elif pd.api.types.is_object_dtype(df[column]):
-                df[column] = df[column].apply(
-                    lambda x: str(x) if x is not None else None)
-
         for _, row in df.iterrows():
             cols = ','.join(df.columns)
             placeholders = ','.join(['%s'] * len(df.columns))
@@ -97,7 +96,6 @@ def save_dataframe_to_db(df, table_name, pk_column):
                 INSERT INTO {table_name} ({cols}) VALUES ({placeholders})
                 ON CONFLICT ({pk_column}) DO UPDATE SET {update_cols}
             """
-
             cursor.execute(sql, tuple(row))
 
         conn.commit()
@@ -109,7 +107,6 @@ def save_dataframe_to_db(df, table_name, pk_column):
 
     except Exception as e:
         print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
-        import traceback
         traceback.print_exc()
         conn.rollback()
     finally:
@@ -677,18 +674,20 @@ def normalize_monday_items(items_data):
     return pd.DataFrame(rows)
 
 
-def save_dataframe_to_db(df, table_name, date_column=None):
-    conn = get_db_connection()
+def save_dataframe_to_db(df, table_name):
+    conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
-
-    if date_column and date_column in df.columns:
-        df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
 
     for _, row in df.iterrows():
         cur.execute(f'''
-            INSERT INTO {table_name} ({','.join(f'"{col}"' for col in df.columns)})
-            VALUES ({','.join(['%s'] * len(df.columns))})
-        ''', tuple(row))
+            INSERT INTO {table_name} ("Name", "Assigned Team", "Status", "Dependency")
+            VALUES (%s, %s, %s, %s)
+        ''', (
+            row.get("Name"),
+            row.get("Assigned Team"),
+            row.get("Status"),
+            row.get("Dependency")
+        ))
 
     conn.commit()
     cur.close()
