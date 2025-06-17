@@ -1,0 +1,454 @@
+import psycopg2
+from datetime import datetime
+import uuid
+import random
+from datetime import timedelta   
+import psycopg2
+
+
+
+def gen_id():
+    return str(uuid.uuid4())
+
+# תאריך אחיד לתסריט
+today = datetime(2025, 6, 10)
+
+# ---------- חיבור ל-Supabase ----------
+def get_db_connection():
+    return psycopg2.connect(
+        dbname="postgres",
+        user="postgres.apphxbmngxlclxromyvt",
+        password="insightbot2025",
+        host="aws-0-eu-north-1.pooler.supabase.com",
+        port="6543"
+    )
+    
+# ---------- GitHub commits (user_3) ----------
+def insert_github_commits(conn):
+    usernames = [
+        "EfratWilinger", "YafitCohen3278", "AdiToubin", "AvitalHoyzer",
+        "meitav1", "AyalaTrachtman", "yaelshneor2004"
+    ]
+
+    commit_messages = [
+        "Initial commit",
+        "Fix login bug",
+        "Refactor authentication logic",
+        "Add unit tests",
+        "Improve error handling",
+        "Update README",
+        "Optimize SQL queries",
+        "Add API documentation",
+        "Fix typo in comments",
+        "Improve UI responsiveness",
+        "Remove unused imports",
+        "Switch to environment variables",
+        "Upgrade dependencies",
+        "Implement user permissions",
+        "Add loading spinner to dashboard"
+    ]
+
+    with conn.cursor() as cur:
+        for _ in range(20):
+            author = random.choice(usernames)
+            message = random.choice(commit_messages)
+            sha = gen_id()
+            url = f"https://example.com/{sha[:8]}"
+            
+            days_ago = random.randint(0, 13)
+            random_date = today - timedelta(days=days_ago)
+            
+            cur.execute("""
+                INSERT INTO github_commits_raw (sha, author, message, timestamp, repository, url)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (sha, author, message, random_date, "api-core", url))
+
+    conn.commit()
+
+# ---------- GitHub issues (user_5) ----------
+def insert_github_issues(conn):
+    usernames = [
+        "EfratWilinger", "YafitCohen3278", "AdiToubin", "AvitalHoyzer",
+        "meitav1", "AyalaTrachtman", "yaelshneor2004"
+    ]
+
+    titles = [
+        "Crash on login screen",
+        "Spacing issue in navbar",
+        "Data not saving",
+        "Page not loading",
+        "Error 500 when submitting form",
+        "Broken image on homepage",
+        "Slow loading time",
+        "Dropdown not working on mobile",
+        "Styling issue in footer",
+        "Text overlap on dashboard"
+    ]
+
+    bodies = [
+        "App crashes when user clicks login.",
+        "Padding missing on the right side of navbar.",
+        "Data entered is not being saved to the database.",
+        "Blank screen appears after login.",
+        "Server throws error 500 on submit.",
+        "Image is missing or broken on the homepage.",
+        "Page takes more than 10 seconds to load.",
+        "Mobile dropdown is unresponsive.",
+        "Footer styles are not aligned correctly.",
+        "Dashboard content overlaps when window is resized."
+    ]
+
+    repositories = ["ui", "frontend", "backend"]
+
+    with conn.cursor() as cur:
+        for _ in range(20): 
+            user_id = random.choice(usernames)
+            title = random.choice(titles)
+            body = random.choice(bodies)
+            is_critical = random.choice([True, False])    
+            days_ago = random.randint(0, 13)
+            issue_date = today - timedelta(days=days_ago)
+            sha = gen_id()
+            url = f"https://example.com/{sha[:8]}"
+            repo = random.choice(repositories)  # 💡 ריפוזיטורי רנדומלי
+
+            cur.execute("""
+                INSERT INTO github_issues_raw (
+                    id, user_id, title, body, state, created_at,
+                    closed_at, repository, url, is_critical, action
+                )
+                VALUES (%s, %s, %s, %s, 'open', %s, NULL, %s, %s, %s, 'opened')
+            """, (
+                sha, user_id, title, body, issue_date, repo, url, is_critical
+            ))
+
+    conn.commit()
+
+
+# ---------- GitHub PRs וביקורות ----------
+def insert_github_prs_and_reviews(conn):
+    usernames = [
+        "EfratWilinger", "YafitCohen3278", "AdiToubin", "AvitalHoyzer",
+        "meitav1", "AyalaTrachtman", "yaelshneor2004"
+    ]
+
+    pr_titles = [
+        "Refactor settings page",
+        "Fix alignment bug",
+        "Add dark mode toggle",
+        "Improve dashboard performance",
+        "Update footer links",
+        "Add password reset flow",
+        "Upgrade bootstrap version",
+        "Remove deprecated code",
+        "Fix typo in title",
+        "Adjust spacing in profile page"
+    ]
+
+    def random_date_within_last_2_weeks():
+        now = datetime.now()
+        return now - timedelta(days=random.randint(0, 13), hours=random.randint(0, 23), minutes=random.randint(0, 59))
+
+    def random_review_body():
+        return random.choice([
+            "Looks good to me!",
+            "Please add tests.",
+            "This breaks on mobile.",
+            "Consider renaming this variable.",
+            "Nice improvement.",
+            "Can you clarify this logic?"
+        ])
+
+    with conn.cursor() as cur:
+        for _ in range(10):  # insert 5 PRs
+            pr_id = gen_id()
+            author = random.choice(usernames)
+            title = random.choice(pr_titles)
+            created_at = random_date_within_last_2_weeks()
+
+            state = random.choice(['open', 'closed', 'merged'])
+            closed_at = merged_at = None
+            event_action = 'opened'
+            
+            if state == 'closed':
+                closed_at = created_at + timedelta(days=random.randint(0, 3))
+                event_action = 'closed'
+            elif state == 'merged':
+                closed_at = created_at + timedelta(days=random.randint(0, 2))
+                merged_at = closed_at + timedelta(hours=random.randint(1, 12))
+                event_action = 'merged'
+
+            pr_url = f"https://example.com/{pr_id[:8]}"
+
+            cur.execute("""
+                INSERT INTO github_prs_raw (
+                    id, user_id, title, state, created_at, closed_at, merged_at,
+                    repository, url, event_action
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'ui', %s, %s)
+            """, (
+                pr_id, author, title, state, created_at, closed_at,
+                merged_at, pr_url, event_action
+            ))
+
+            if state == 'open':
+                reviewer = random.choice([u for u in usernames if u != author])
+                review_id = gen_id()
+                review_body = random_review_body()
+                review_url = f"https://example.com/review_{review_id[:6]}"
+
+                cur.execute("""
+                    INSERT INTO github_reviews_raw (
+                        id, pull_request_id, user_id, state, body, created_at, url
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    review_id, pr_id, reviewer,
+                    random.choice(['approved', 'changes_requested']),
+                    review_body, created_at + timedelta(hours=random.randint(1, 48)),
+                    review_url
+                ))
+
+    conn.commit()
+
+
+# ---------- הפעלת הכל ----------
+def run_full_simulation():
+    conn = get_db_connection()
+    try:
+        insert_github_commits(conn)
+        print("✅ GitHub commits inserted.")
+        insert_github_issues(conn)
+        print("✅ GitHub issues inserted.")
+        insert_github_prs_and_reviews(conn)
+        print("✅ GitHub PRs and reviews inserted.")
+        
+    finally:
+        conn.close()
+
+import psycopg2
+from datetime import datetime
+import uuid
+import random
+from datetime import timedelta   
+import psycopg2
+
+
+
+def gen_id():
+    return str(uuid.uuid4())
+
+# תאריך אחיד לתסריט
+today = datetime(2025, 6, 10)
+
+# ---------- חיבור ל-Supabase ----------
+def get_db_connection():
+    return psycopg2.connect(
+        dbname="postgres",
+        user="postgres.apphxbmngxlclxromyvt",
+        password="insightbot2025",
+        host="aws-0-eu-north-1.pooler.supabase.com",
+        port="6543"
+    )
+    
+# ---------- GitHub commits (user_3) ----------
+def insert_github_commits(conn):
+    usernames = [
+        "EfratWilinger", "YafitCohen3278", "AdiToubin", "AvitalHoyzer",
+        "meitav1", "AyalaTrachtman", "yaelshneor2004"
+    ]
+
+    commit_messages = [
+        "Initial commit",
+        "Fix login bug",
+        "Refactor authentication logic",
+        "Add unit tests",
+        "Improve error handling",
+        "Update README",
+        "Optimize SQL queries",
+        "Add API documentation",
+        "Fix typo in comments",
+        "Improve UI responsiveness",
+        "Remove unused imports",
+        "Switch to environment variables",
+        "Upgrade dependencies",
+        "Implement user permissions",
+        "Add loading spinner to dashboard"
+    ]
+
+    with conn.cursor() as cur:
+        for _ in range(20):
+            author = random.choice(usernames)
+            message = random.choice(commit_messages)
+            sha = gen_id()
+            url = f"https://example.com/{sha[:8]}"
+            
+            days_ago = random.randint(0, 13)
+            random_date = today - timedelta(days=days_ago)
+            
+            cur.execute("""
+                INSERT INTO github_commits_raw (sha, author, message, timestamp, repository, url)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (sha, author, message, random_date, "api-core", url))
+
+    conn.commit()
+
+# ---------- GitHub issues (user_5) ----------
+def insert_github_issues(conn):
+    usernames = [
+        "EfratWilinger", "YafitCohen3278", "AdiToubin", "AvitalHoyzer",
+        "meitav1", "AyalaTrachtman", "yaelshneor2004"
+    ]
+
+    titles = [
+        "Crash on login screen",
+        "Spacing issue in navbar",
+        "Data not saving",
+        "Page not loading",
+        "Error 500 when submitting form",
+        "Broken image on homepage",
+        "Slow loading time",
+        "Dropdown not working on mobile",
+        "Styling issue in footer",
+        "Text overlap on dashboard"
+    ]
+
+    bodies = [
+        "App crashes when user clicks login.",
+        "Padding missing on the right side of navbar.",
+        "Data entered is not being saved to the database.",
+        "Blank screen appears after login.",
+        "Server throws error 500 on submit.",
+        "Image is missing or broken on the homepage.",
+        "Page takes more than 10 seconds to load.",
+        "Mobile dropdown is unresponsive.",
+        "Footer styles are not aligned correctly.",
+        "Dashboard content overlaps when window is resized."
+    ]
+
+    with conn.cursor() as cur:
+        for _ in range(20): 
+            user_id = random.choice(usernames)
+            title = random.choice(titles)
+            body = random.choice(bodies)
+            is_critical = random.choice([True, False])    
+            days_ago = random.randint(0, 13)
+            issue_date = today - timedelta(days=days_ago)
+            sha = gen_id()
+            url = f"https://example.com/{sha[:8]}"
+            
+            cur.execute("""
+                INSERT INTO github_issues_raw (
+                    id, user_id, title, body, state, created_at,
+                    closed_at, repository, url, is_critical, action
+                )
+                VALUES (%s, %s, %s, %s, 'open', %s, NULL, 'ui', %s, %s, 'opened')
+            """, (
+                sha, user_id, title, body, issue_date, url, is_critical
+            ))
+
+    conn.commit()
+
+# ---------- GitHub PRs וביקורות ----------
+def insert_github_prs_and_reviews(conn):
+    usernames = [
+        "EfratWilinger", "YafitCohen3278", "AdiToubin", "AvitalHoyzer",
+        "meitav1", "AyalaTrachtman", "yaelshneor2004"
+    ]
+
+    pr_titles = [
+        "Refactor settings page",
+        "Fix alignment bug",
+        "Add dark mode toggle",
+        "Improve dashboard performance",
+        "Update footer links",
+        "Add password reset flow",
+        "Upgrade bootstrap version",
+        "Remove deprecated code",
+        "Fix typo in title",
+        "Adjust spacing in profile page"
+    ]
+
+    def random_date_within_last_2_weeks():
+        now = datetime.now()
+        return now - timedelta(days=random.randint(0, 13), hours=random.randint(0, 23), minutes=random.randint(0, 59))
+
+    def random_review_body():
+        return random.choice([
+            "Looks good to me!",
+            "Please add tests.",
+            "This breaks on mobile.",
+            "Consider renaming this variable.",
+            "Nice improvement.",
+            "Can you clarify this logic?"
+        ])
+
+    with conn.cursor() as cur:
+        for _ in range(10):  # insert 5 PRs
+            pr_id = gen_id()
+            author = random.choice(usernames)
+            title = random.choice(pr_titles)
+            created_at = random_date_within_last_2_weeks()
+
+            state = random.choice(['open', 'closed', 'merged'])
+            closed_at = merged_at = None
+            event_action = 'opened'
+            
+            if state == 'closed':
+                closed_at = created_at + timedelta(days=random.randint(0, 3))
+                event_action = 'closed'
+            elif state == 'merged':
+                closed_at = created_at + timedelta(days=random.randint(0, 2))
+                merged_at = closed_at + timedelta(hours=random.randint(1, 12))
+                event_action = 'merged'
+
+            pr_url = f"https://example.com/{pr_id[:8]}"
+
+            cur.execute("""
+                INSERT INTO github_prs_raw (
+                    id, user_id, title, state, created_at, closed_at, merged_at,
+                    repository, url, event_action
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'ui', %s, %s)
+            """, (
+                pr_id, author, title, state, created_at, closed_at,
+                merged_at, pr_url, event_action
+            ))
+
+            if state == 'open':
+                reviewer = random.choice([u for u in usernames if u != author])
+                review_id = gen_id()
+                review_body = random_review_body()
+                review_url = f"https://example.com/review_{review_id[:6]}"
+
+                cur.execute("""
+                    INSERT INTO github_reviews_raw (
+                        id, pull_request_id, user_id, state, body, created_at, url
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    review_id, pr_id, reviewer,
+                    random.choice(['approved', 'changes_requested']),
+                    review_body, created_at + timedelta(hours=random.randint(1, 48)),
+                    review_url
+                ))
+
+    conn.commit()
+
+
+# ---------- הפעלת הכל ----------
+def run_full_simulation():
+    conn = get_db_connection()
+    try:
+        insert_github_commits(conn)
+        print("✅ GitHub commits inserted.")
+        insert_github_issues(conn)
+        print("✅ GitHub issues inserted.")
+        insert_github_prs_and_reviews(conn)
+        print("✅ GitHub PRs and reviews inserted.")
+        
+    finally:
+        conn.close()
+
+if __name__ == "__main__":
+    run_full_simulation()
