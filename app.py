@@ -198,9 +198,14 @@ def get_user_email(user_id):
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
-    data = request.json
+    data = request.get_json()
+
+    # ✅ טפל בבקשת אימות challenge
+    if data.get("type") == "url_verification":
+        print("🔗 Received Slack challenge request")
+        return data.get("challenge", ""), 200, {'Content-Type': 'text/plain'}
+
     print("📥 Slack event received:")
-    # print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
     if (event.get("type") == "message" and
