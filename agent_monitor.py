@@ -1,3 +1,4 @@
+from datetime import timezone
 import pandas as pd
 import re
 from datetime import datetime
@@ -12,6 +13,32 @@ import time
 import os
 
 LAST_PROCESSED_FILE = "last_processed.txt"
+
+SLACK_TO_GIT_USERNAME_MAP = {
+    "efrat.wilinger@gmail.com": "EfratWilinger",
+    "yafit3278@gmail.com": "YafitCohen3278",
+    "aditoubin@gmail.com": "AdiToubin",
+    "avitalhoyzer@gmail.com": "AvitalHoyzer",
+    "meitav.bin@gmail.com": "meitav1",
+    "eszilber29@gmail.com": "EtiZilberlicht",
+    "ayala62005@gmail.com": "AyalaTrachtman",
+    "y7697086@gmail.com": "yaelshneor2004"
+}
+
+
+def get_canonical_username(slack_email: str = None, git_username: str = None) -> str:
+    if slack_email and slack_email in SLACK_TO_GIT_USERNAME_MAP:
+        return SLACK_TO_GIT_USERNAME_MAP[slack_email]
+    if git_username and git_username in SLACK_TO_GIT_USERNAME_MAP.values():
+        return git_username
+    return None
+
+
+def add_canonical_user_column(df: pd.DataFrame, slack_col: str = "user_id", git_col: str = "author") -> pd.DataFrame:
+    def map_user(row):
+        return get_canonical_username(row.get(slack_col), row.get(git_col))
+    df["canonical_username"] = df.apply(map_user, axis=1)
+    return df
 
 
 def load_filtered_github_commits():
@@ -42,6 +69,7 @@ def load_filtered_github_issues():
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו Issues לפני {last_ts} - נותרו {len(df)}")
+
     return df
 
 
@@ -64,18 +92,17 @@ def load_filtered_github_reviews():
 def load_filtered_github_prs():
     df = load_github_prs()
     last_ts = get_last_processed_time("github_prs_raw")
-    if last_ts:
-        import pandas as pd  # ודא שזה קיים בראש הקובץ
 
-    if last_ts.tzinfo is None:
-        last_ts = pd.Timestamp(last_ts).tz_localize("UTC")
-    else:
+    if last_ts is not None:
         last_ts = pd.Timestamp(last_ts)
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.tz_localize("UTC")
 
         df['ts_dt'] = pd.to_datetime(df['created_at'], utc=True)
         df = df[df['ts_dt'] > last_ts].copy()
         df = df.drop(columns=['ts_dt'])
         print(f"🧹 סוננו PRs לפני {last_ts} - נותרו {len(df)}")
+
     return df
 
 
@@ -123,8 +150,8 @@ def load_slack_messages():
     query = "SELECT * FROM slack_messages_raw"
     try:
         df = pd.read_sql(query, conn)
-        if 'user' in df.columns and 'user_id' not in df.columns:
-            df = df.rename(columns={'user': 'user_id'})
+        if 'user' in df.columns and 'canonical_username' not in df.columns:
+            df = df.rename(columns={'user': 'canonical_username'})
         df = normalize_user_ids(df)
         return df
     finally:
@@ -150,6 +177,9 @@ def load_filtered_slack_messages():
         before = len(df)
         df = df[df['deleted'] != True].copy()
         print(f"🗑 סוננו {before - len(df)} הודעות שנמחקו")
+        replies_df = add_canonical_user_column(replies_df, slack_col="user_id")
+        slack_reports_df = add_canonical_user_column(
+            slack_reports_df, slack_col="user_id")
 
     return df
 
@@ -161,7 +191,7 @@ def load_slack_reports():
         df = pd.read_sql(query, conn)
         df = normalize_user_ids(df)
         if df.empty:
-            return pd.DataFrame(columns=['id', 'user_id', 'text', 'ts', 'channel_id', 'report_type', 'status'])
+            return pd.DataFrame(columns=['id', 'canonical_username', 'text', 'ts', 'channel_id', 'report_type', 'status'])
         return df
     finally:
         conn.close()
@@ -175,7 +205,7 @@ def load_github_issues():
         df = pd.read_sql(query, conn)
         if df.empty:
             # הגדר עמודות צפויות עבור DataFrame ריק
-            return pd.DataFrame(columns=['id', 'user_id', 'title', 'body', 'state', 'created_at', 'closed_at', 'repository', 'url', 'is_critical'])
+            return pd.DataFrame(columns=['id', 'canonical_username', 'title', 'body', 'state', 'created_at', 'closed_at', 'repository', 'url', 'is_critical'])
         return df
     finally:
         conn.close()
@@ -191,8 +221,8 @@ def load_github_commits():
             # הגדר עמודות צפויות עבור DataFrame ריק
             return pd.DataFrame(columns=['sha', 'author', 'message', 'timestamp', 'repository', 'url'])
         # ודא שעמודת 'author' משונה ל-'user_id' אם יש צורך
-        if 'author' in df.columns and 'user_id' not in df.columns:
-            df = df.rename(columns={'author': 'user_id'})
+        if 'author' in df.columns and 'canonical_username' not in df.columns:
+            df = df.rename(columns={'author': 'canonical_username'})
         return df
     finally:
         conn.close()
@@ -200,9 +230,9 @@ def load_github_commits():
 
 def analyze_pull_requests(github_prs_df):
     if github_prs_df.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'pull_requests'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'pull_requests'])
     github_prs_df['date'] = pd.to_datetime(github_prs_df['created_at']).dt.date
-    return github_prs_df.groupby(['user_id', 'date']).size().reset_index(name='pull_requests')
+    return github_prs_df.groupby(['canonical_username', 'date']).size().reset_index(name='pull_requests')
 
 
 def load_github_reviews():
@@ -213,7 +243,7 @@ def load_github_reviews():
         df = pd.read_sql(query, conn)
         if df.empty:
             # הגדר עמודות צפויות עבור DataFrame ריק
-            return pd.DataFrame(columns=['id', 'pull_request_id', 'user_id', 'state', 'body', 'created_at', 'url'])
+            return pd.DataFrame(columns=['id', 'pull_request_id', 'canonical_username', 'state', 'body', 'created_at', 'url'])
         return df
     finally:
         conn.close()
@@ -227,7 +257,7 @@ def load_github_prs():
         df = pd.read_sql(query, conn)
         if df.empty:
             # הגדר עמודות צפויות עבור DataFrame ריק
-            return pd.DataFrame(columns=['id', 'user_id', 'title', 'state', 'created_at', 'closed_at', 'merged_at', 'repository', 'url'])
+            return pd.DataFrame(columns=['id', 'canonical_username', 'title', 'state', 'created_at', 'closed_at', 'merged_at', 'repository', 'url'])
         return df
     finally:
         conn.close()
@@ -238,13 +268,13 @@ def load_github_prs():
 def analyze_total_messages(slack_df):
     """מנתח את סך ההודעות שנשלחו על ידי כל משתמש ביום."""
     slack_df['date'] = pd.to_datetime(slack_df['ts'], unit='s').dt.date
-    return slack_df.groupby(['user_id', 'date']).size().reset_index(name='total_messages')
+    return slack_df.groupby(['canonical_username', 'date']).size().reset_index(name='total_messages')
 
 
 def normalize_user_ids(df):
     """אם יש עמודת user – שנה את שמה ל־user_id"""
-    if 'user' in df.columns and 'user_id' not in df.columns:
-        df = df.rename(columns={'user': 'user_id'})
+    if 'user' in df.columns and 'canonical_username' not in df.columns:
+        df = df.rename(columns={'user': 'canonical_username'})
     return df
 
 
@@ -288,7 +318,7 @@ def analyze_help_requests(slack_df):
 def analyze_help_requests_count(slack_df):
     """סופר את מספר בקשות העזרה לכל משתמש ביום."""
     help_df = analyze_help_requests(slack_df)
-    return help_df.groupby(['user_id', 'date']).size().reset_index(name='help_requests')
+    return help_df.groupby(['canonical_username', 'date']).size().reset_index(name='help_requests')
 
 
 def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_issues_df):
@@ -311,9 +341,9 @@ def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_is
 
         # בדיקה מול slack_reports_df
         # ודא ש-slack_reports_df לא ריק ושיש בו את העמודות הנדרשות
-        if not slack_reports_df.empty and all(col in slack_reports_df.columns for col in ['user_id', 'ts', 'text']):
+        if not slack_reports_df.empty and all(col in slack_reports_df.columns for col in ['canonical_username', 'ts', 'text']):
             user_reports = slack_reports_df[
-                (slack_reports_df['user_id'] == row['user_id']) &
+                (slack_reports_df['canonical_username'] == row['canonical_username']) &
                 (pd.to_datetime(
                     slack_reports_df['ts'], unit='s').dt.date == row['date'])
             ]
@@ -322,9 +352,9 @@ def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_is
 
         # בדיקה מול github_issues_df
         # ודא ש-github_issues_df לא ריק ושיש בו את העמודות הנדרשות
-        if not github_issues_df.empty and all(col in github_issues_df.columns for col in ['user_id', 'created_at', 'closed_at', 'state']):
+        if not github_issues_df.empty and all(col in github_issues_df.columns for col in ['canonical_username', 'created_at', 'closed_at', 'state']):
             issue_matches = github_issues_df[
-                (github_issues_df['user_id'] == row['user_id']) &
+                (github_issues_df['canonical_username'] == row['canonical_username']) &
                 (pd.to_datetime(github_issues_df['created_at']).dt.date <= row['date']) &
                 ((pd.to_datetime(github_issues_df['closed_at'], errors='coerce').dt.date == row['date']) |
                  (github_issues_df['state'] == 'closed'))
@@ -341,14 +371,14 @@ def analyze_message_replies(messages_df, replies_df, slack_reports_df, github_is
         return 'needs_attention'
 
     # ודא ש-messages_df מכיל את העמודות הנדרשות לפני ה-apply
-    if not messages_df.empty and 'text' in messages_df.columns and 'user_id' in messages_df.columns and 'date' in messages_df.columns:
+    if not messages_df.empty and 'text' in messages_df.columns and 'canonical_username' in messages_df.columns and 'date' in messages_df.columns:
         messages['status'] = messages.apply(classify, axis=1)
     else:
         # אם messages_df ריק או חסרות עמודות, צור עמודת 'status' ריקה
         messages['status'] = None  # או 'unknown' או ערך אחר שמתאים לכם
 
     messages['date'] = pd.to_datetime(messages['ts'], unit='s').dt.date
-    return messages[['id', 'user_id', 'text', 'num_replies', 'status', 'date']]
+    return messages[['id', 'canonical_username', 'text', 'num_replies', 'status', 'date']]
 
 
 def analyze_stuck_status(slack_df, replies_df, slack_reports_df, github_issues_df):
@@ -359,17 +389,17 @@ def analyze_stuck_status(slack_df, replies_df, slack_reports_df, github_issues_d
 
     # ודא ש-replies_analysis מכיל את העמודות הנדרשות
     if replies_analysis.empty or not all(col in replies_analysis.columns for col in ['id', 'status']):
-        return pd.DataFrame(columns=['user_id', 'date', 'stuck_passive', 'stuck_active', 'resolved'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'stuck_passive', 'stuck_active', 'resolved'])
 
-    merged = help_df[['id', 'user_id', 'date']].merge(
+    merged = help_df[['id', 'canonical_username', 'date']].merge(
         replies_analysis[['id', 'status']], on='id')
 
     # ודא ש-merged לא ריק לפני pivot_table
     if merged.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'stuck_passive', 'stuck_active', 'resolved'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'stuck_passive', 'stuck_active', 'resolved'])
 
     summary = merged.pivot_table(
-        index=['user_id', 'date'], columns='status', aggfunc='size', fill_value=0).reset_index()
+        index=['canonical_username', 'date'], columns='status', aggfunc='size', fill_value=0).reset_index()
     return summary.rename(columns={
         'open': 'stuck_passive',
         'needs_attention': 'stuck_active',
@@ -380,30 +410,30 @@ def analyze_stuck_status(slack_df, replies_df, slack_reports_df, github_issues_d
 def analyze_completed_tasks(github_issues_df):
     """מנתח משימות GitHub שהושלמו."""
     if github_issues_df.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'completed_tasks'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'completed_tasks'])
 
     github_issues_df['date'] = pd.to_datetime(
         github_issues_df['closed_at'], errors='coerce').dt.date
     filtered = github_issues_df[(
         github_issues_df['state'] == 'closed') & github_issues_df['date'].notna()]
-    return filtered.groupby(['user_id', 'date']).size().reset_index(name='completed_tasks')
+    return filtered.groupby(['canonical_username', 'date']).size().reset_index(name='completed_tasks')
 
 
 def analyze_open_tasks(github_issues_df):
     """מנתח משימות GitHub פתוחות."""
     if github_issues_df.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'open_tasks'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'open_tasks'])
 
     github_issues_df['date'] = pd.to_datetime(
         github_issues_df['created_at']).dt.date
     open_issues = github_issues_df[github_issues_df['state'] == 'open']
-    return open_issues.groupby(['user_id', 'date']).size().reset_index(name='open_tasks')
+    return open_issues.groupby(['canonical_username', 'date']).size().reset_index(name='open_tasks')
 
 
 def analyze_commits(github_commits_df):
     """מנתח קומיטים של GitHub."""
     if github_commits_df.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'commits'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'commits'])
 
     github_commits_df['date'] = pd.to_datetime(
         github_commits_df['timestamp']).dt.date
@@ -411,19 +441,19 @@ def analyze_commits(github_commits_df):
     if 'author' not in github_commits_df.columns:
         # אם 'author' לא קיימת, כבר שינית אותה ל-user_id ב-load_github_commits, או שהיא פשוט חסרה
         # במקרה כזה נחזיר DataFrame ריק עם העמודות הצפויות
-        return pd.DataFrame(columns=['user_id', 'date', 'commits'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'commits'])
 
-    return github_commits_df.groupby(['author', 'date']).size().reset_index(name='commits').rename(columns={'author': 'user_id'})
+    return github_commits_df.groupby(['author', 'date']).size().reset_index(name='commits').rename(columns={'author': 'canonical_username'})
 
 
 def analyze_reviews(github_reviews_df):
     """מנתח ביקורות קוד של GitHub."""
     if github_reviews_df.empty:
-        return pd.DataFrame(columns=['user_id', 'date', 'reviews'])
+        return pd.DataFrame(columns=['canonical_username', 'date', 'reviews'])
 
     github_reviews_df['date'] = pd.to_datetime(
         github_reviews_df['created_at']).dt.date
-    return github_reviews_df.groupby(['user_id', 'date']).size().reset_index(name='reviews')
+    return github_reviews_df.groupby(['canonical_username', 'date']).size().reset_index(name='reviews')
 
 # --- מיזוג תוצאות הניתוח לטבלה אחת (user_daily_summary) ---
 
@@ -447,13 +477,13 @@ def build_user_daily_summary(slack_df, replies_df, slack_reports_df,
     # מיזוג כל הטבלאות לפי user_id + date
     user_summary_df = reduce(
         lambda left, right: pd.merge(
-            left, right, on=['user_id', 'date'], how='outer'),
+            left, right, on=['canonical_username', 'date'], how='outer'),
         dfs
     ).fillna(0)
 
     # המרת עמודות מספריות ל־int
     for col in user_summary_df.columns:
-        if col not in ['user_id', 'date']:
+        if col not in ['canonical_username', 'date']:
             user_summary_df[col] = user_summary_df[col].astype(int)
 
     # שינוי שם 'date' ל־'day'
@@ -509,9 +539,9 @@ def build_project_status_daily(github_prs_df, github_issues_df, all_users_df):
 
     active_users = 0
     # ודא ש-all_users_df לא ריק ושיש בו את העמודות הנדרשות
-    if not all_users_df.empty and all(col in all_users_df.columns for col in ['day', 'user_id']):
+    if not all_users_df.empty and all(col in all_users_df.columns for col in ['day', 'canonical_username']):
         active_users = all_users_df[all_users_df['day']
-                                    == today]['user_id'].nunique()
+                                    == today]['canonical_username'].nunique()
 
     return pd.DataFrame([{
         'day': today,
@@ -530,25 +560,25 @@ def build_alerts(user_summary_df):
     alerts = []
     # ודא ש-user_summary_df לא ריק ושיש בו את העמודות הנדרשות
     if user_summary_df.empty:
-        return pd.DataFrame(columns=['id', 'user_id', 'type', 'message', 'severity', 'created_at'])
+        return pd.DataFrame(columns=['id', 'canonical_username', 'type', 'message', 'severity', 'created_at'])
 
     for _, row in user_summary_df.iterrows():
         # בדיקות עם .get() כדי למנוע KeyError אם עמודה חסרה מאיזושהי סיבה
         if row.get('stuck_passive', 0) > 0:
             alerts.append({
                 'id': str(uuid.uuid4()),
-                'user_id': row['user_id'],
+                'user_id': row['canonical_username'],
                 'type': 'stuck_passive',
-                'message': f"{row['user_id']} לא התקדם במשימה במשך זמן מה.",
+                'message': f"{row['canonical_username']} לא התקדם במשימה במשך זמן מה.",
                 'severity': 'medium',
                 'created_at': row['day']
             })
         if row.get('help_requests', 0) > 0 and row.get('resolved', 0) == 0:
             alerts.append({
                 'id': str(uuid.uuid4()),
-                'user_id': row['user_id'],
+                'user_id': row['canonical_username'],
                 'type': 'unanswered_help',
-                'message': f"{row['user_id']} ביקש עזרה אך לא קיבל מענה.",
+                'message': f"{row['canonical_username']} ביקש עזרה אך לא קיבל מענה.",
                 'severity': 'high',
                 'created_at': row['day']
             })
@@ -557,9 +587,9 @@ def build_alerts(user_summary_df):
         if all(row.get(col, 0) == 0 for col in ['total_messages', 'commits', 'reviews', 'completed_tasks', 'open_tasks']):
             alerts.append({
                 'id': str(uuid.uuid4()),
-                'user_id': row['user_id'],
+                'user_id': row['canonical_username'],
                 'type': 'inactivity',
-                'message': f"{row['user_id']} לא היה פעיל כלל ביום {row['day']}.",
+                'message': f"{row['canonical_username']} לא היה פעיל כלל ביום {row['day']}.",
                 'severity': 'low',
                 'created_at': row['day']
             })
@@ -622,16 +652,116 @@ def save_dataframe_to_db(df, table_name, conflict_columns=None):
         conn.close()
 
 
-def load_github_commits():
-    conn = get_db_connection()
-    df = pd.read_sql("SELECT * FROM github_commits_raw", conn)
-    conn.close()
-    return df
+# def load_github_commits():
+    # conn = get_db_connection()
+    # df = pd.read_sql("SELECT * FROM github_commits_raw", conn)
+    # conn.close()
+    # return df
 
 
-# ============================
-# 🧪 MAIN DEMO - הרצת דמו מלאה
-# ============================
+def build_alerts_v2(user_summary_df, github_prs_df, github_reviews_df, github_issues_df):
+    """יוצר התראות חכמות ובעלות ערך עסקי מתוך כלל הנתונים הזמינים."""
+    alerts = []
+    today = datetime.now(timezone.utc).date()
+
+    # ✅ תיקון: לשם אחידות משתמשים ב־user_id (העמודה תועתק מ-canonical_username)
+    user_summary_df = user_summary_df.rename(
+        columns={"canonical_username": "user_id"})
+
+    # 1. PR פתוח מעל 3 ימים וללא ביקורת
+    if not github_prs_df.empty:
+        github_prs_df['created_date'] = pd.to_datetime(
+            github_prs_df['created_at']).dt.date
+        github_prs_df['days_open'] = (
+            today - github_prs_df['created_date']).dt.days
+        open_prs = github_prs_df[(github_prs_df['state'] == 'open') & (
+            github_prs_df['days_open'] > 3)]
+        reviewed_pr_ids = set(
+            github_reviews_df['pull_request_id']) if not github_reviews_df.empty else set()
+
+        for _, row in open_prs.iterrows():
+            if row['id'] not in reviewed_pr_ids:
+                alerts.append({
+                    'id': str(uuid.uuid4()),
+                    'user_id': row['user_id'],
+                    'type': 'unreviewed_pr',
+                    'message': f"PR של {row['user_id']} פתוח כבר {row['days_open']} ימים ללא בדיקה.",
+                    'severity': 'high',
+                    'created_at': today
+                })
+
+    # 2. חוסר פעילות של יומיים רצופים לפחות
+    user_summary_df_sorted = user_summary_df.sort_values(['user_id', 'day'])
+    grouped = user_summary_df_sorted.groupby('user_id')
+
+    for user, group in grouped:
+        group = group.set_index('day').sort_index()
+        group['activity'] = group[['total_messages', 'commits',
+                                   'reviews', 'completed_tasks']].sum(axis=1)
+        inactive_days = group['activity'] == 0
+        if inactive_days.empty:
+            continue
+        max_consec = (inactive_days != inactive_days.shift()).cumsum()
+        counts = inactive_days.groupby(max_consec).sum()
+        if (counts >= 2).any():
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': user,
+                'type': 'inactive_multiple_days',
+                'message': f"{user} לא ביצע כל פעולה במשך לפחות יומיים רצופים.",
+                'severity': 'medium',
+                'created_at': today
+            })
+
+    # 3. בקשות עזרה ללא מענה
+    if 'help_requests' in user_summary_df.columns and 'resolved' in user_summary_df.columns:
+        help_issues = user_summary_df[(user_summary_df['help_requests'] >= 2) & (
+            user_summary_df['resolved'] == 0)]
+        for _, row in help_issues.iterrows():
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'unanswered_help_repeated',
+                'message': f"{row['user_id']} ביקש עזרה {row['help_requests']} פעמים ביום {row['day']} ללא מענה.",
+                'severity': 'high',
+                'created_at': row['day']
+            })
+
+    # 4. משתמש עם עומס יתר בפעילות
+    user_summary_df['total_actions'] = user_summary_df[[
+        'total_messages', 'commits', 'reviews', 'pull_requests', 'help_requests'
+    ]].sum(axis=1)
+
+    overloaded_users = user_summary_df[user_summary_df['total_actions'] >= 15]
+    for _, row in overloaded_users.iterrows():
+        alerts.append({
+            'id': str(uuid.uuid4()),
+            'user_id': row['user_id'],
+            'type': 'overloaded_user',
+            'message': f"{row['user_id']} ביצע {row['total_actions']} פעולות ביום אחד ({row['day']}).",
+            'severity': 'medium',
+            'created_at': row['day']
+        })
+
+    # 5. Issue קריטית פתוחה
+    if not github_issues_df.empty:
+        github_issues_df['created_date'] = pd.to_datetime(
+            github_issues_df['created_at']).dt.date
+        critical_issues = github_issues_df[
+            (github_issues_df['is_critical'] == True) &
+            (github_issues_df['state'] == 'open')
+        ]
+        for _, row in critical_issues.iterrows():
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'user_id': row['user_id'],
+                'type': 'critical_issue_unresolved',
+                'message': f"Issue קריטית נפתחה ע״י {row['user_id']} ביום {row['created_date']} ועדיין פתוחה.",
+                'severity': 'high',
+                'created_at': row['created_date']
+            })
+
+    return pd.DataFrame(alerts)
 
 
 def agent_monitor():
@@ -664,6 +794,19 @@ def agent_monitor():
         print(f"📊 נטענו {len(github_commits_df)} קומיטים מ-GitHub")
         print(f"📊 נטענו {len(github_reviews_df)} ביקורות מ-GitHub")
         print(f"📊 נטענו {len(github_prs_df)} בקשות משיכה מ-GitHub")
+        github_commits_df = add_canonical_user_column(
+            github_commits_df, git_col="author")
+        github_reviews_df = add_canonical_user_column(
+            github_reviews_df, git_col="user_id")
+        github_issues_df = add_canonical_user_column(
+            github_issues_df, git_col="user_id")
+        github_prs_df = add_canonical_user_column(
+            github_prs_df, git_col="user_id")
+        slack_df = add_canonical_user_column(slack_df, slack_col="user_id")
+        replies_df = add_canonical_user_column(replies_df, slack_col="user_id")
+        slack_reports_df = add_canonical_user_column(
+            slack_reports_df, slack_col="user_id")
+
         # --- 2. ביצוע הניתוח ---
         print("🔍 מבצע ניתוח נתונים...")
         user_summary_df = build_user_daily_summary(
@@ -712,7 +855,12 @@ def agent_monitor():
             github_prs_df, github_issues_df, user_summary_df
         )
 
-        alerts_df = build_alerts(user_summary_df)
+        alerts_df = build_alerts_v2(
+            user_summary_df,
+            github_prs_df,
+            github_reviews_df,
+            github_issues_df
+        )
 
         # --- 3. הדפסת תוצאות ---
         print("\n📈 סיכום משתמשים יומי:")
@@ -736,11 +884,15 @@ def agent_monitor():
 
         assert user_summary_df['day'].apply(
             lambda d: isinstance(d, date)).all(), "❌ טיפוס שגוי ב-day"
-        assert user_summary_df['user_id'].notna().all(), "❌ user_id חסר"
+        assert user_summary_df['canonical_username'].notna(
+        ).all(), "❌ user_id חסר"
 
 # המשך שמירה
         save_dataframe_to_db(
-            user_summary_df, 'user_daily_summary', conflict_columns=['user_id', 'day'])
+            user_summary_df,  # לא לשנות שם עמודה כאן
+            'user_daily_summary',
+            conflict_columns=['canonical_username', 'day']
+        )
 
         save_dataframe_to_db(project_status_daily_df, 'project_status_daily')
         save_dataframe_to_db(alerts_df, 'alerts')

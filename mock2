@@ -1,0 +1,118 @@
+import random
+import uuid
+from datetime import timedelta
+import psycopg2
+from datetime import datetime
+def get_db_connection():
+    
+    
+    return psycopg2.connect(
+        dbname="postgres",
+        user="postgres.apphxbmngxlclxromyvt",
+        password="insightbot2025",
+        host="aws-0-eu-north-1.pooler.supabase.com",
+        port="6543"
+    )
+
+def insert_slack_messages(conn):
+    messages = [
+        # בקשות עזרה
+        ("meitav.bin@gmail.com", "מישהו יכול לבדוק למה ה־endpoint של /checkout מחזיר 500?"),
+        ("y7697086@gmail.com", "אני נתקע כל פעם על טסטים של מודול הזמנות – יש למישהו זמן להציץ?"),
+        ("ayala62005@gmail.com", "לא מצליחה לבנות את הפרויקט מקומית, זה כותב לי 'Module not found: utils/db' – מוכר לכם?"),
+        ("aditoubin@gmail.com", "למישהו יש גישה ל־Sentry? צריך לבדוק שגיאה שמופיעה רק בפרודקשן"),
+        ("yafit3278@gmail.com", "איך עשיתם את ה־mock ל־Stripe בפעם הקודמת? לא עובד לי עם Jest"),
+        
+        # תגובות לעזרה
+        ("avitalhoyzer@gmail.com", "כן מאיתב, אני אבדוק את ה־logs ב־backend"),
+        ("efrat.wilinger@gmail.com", "ידוע, זה קורה גם לי בטסטים – תנסה לנקות קאש של pytest"),
+        ("yafit3278@gmail.com", "נראה לי שזה קורה בגלל import כפול – אני אשלח דוגמה"),
+        ("meitav.bin@gmail.com", "שלחתי לך invite לגישה ל־Sentry עכשיו"),
+        ("aditoubin@gmail.com", "מצאתי את הקובץ של ה־mock – אשלח לך ב־Slack פרטי"),
+
+        # הודעות צוות רגילות
+        ("efrat.wilinger@gmail.com", "מישהו ראה את הקריסה בלוגין אחרי השדרוג?"),
+        ("yafit3278@gmail.com", "כן, לדעתי זה קשור למחיקת העוגייה של הסשן"),
+        ("meitav.bin@gmail.com", "אני בודק את זה עכשיו על הסביבת dev שלי"),
+        ("aditoubin@gmail.com", "נראה שזה נכנס עם ה־PR של אתמול"),
+        ("avitalhoyzer@gmail.com", "האם זה מופיע גם בסטייג'ינג או רק בפרודקשן?"),
+        ("efrat.wilinger@gmail.com", "נראה שבשניהם, יש לוג עם NullPointer ב־auth"),
+        ("yafit3278@gmail.com", "ננסה להחזיר את השורה שהוסרה בטעות"),
+        ("ayala62005@gmail.com", "עדכנתי את ה־CI, שיבדוק את הטסטים ברצף"),
+        ("y7697086@gmail.com", "שלחתי commit עם hotfix – תראו אם זה פותר"),
+        ("meitav.bin@gmail.com", "בדקתי עכשיו – נראה שזה תוקן 🎉"),
+        ("avitalhoyzer@gmail.com", "טיפלתי בזה אתמול בלילה – CSS קיבל שינוי קטן"),
+        ("efrat.wilinger@gmail.com", "טוב, מישהו ראה את ה־PR של אפרת?"),
+        ("yafit3278@gmail.com", "אני עושה review עכשיו"),
+        ("meitav.bin@gmail.com", "נראה טוב, רק להעיף את הקונסולות"),
+        ("efrat.wilinger@gmail.com", "סבבה, אטפל בזה"),
+        ("aditoubin@gmail.com", "יאללה שבוע טוב לכולן ✨"),
+    ]
+    with conn.cursor() as cur:
+        for i, (user, text) in enumerate(messages):
+            cur.execute("""
+                INSERT INTO slack_messages_raw (id, channel_id, user_id, text, ts, thread_ts, raw, event_type, parent_id, is_list, list_items, num_list_items)
+                VALUES (%s, 'dev', %s, %s, %s, NULL, '{}'::jsonb, 'message', NULL, FALSE, NULL, NULL)
+            """, (gen_id(), user, text, int(today.timestamp())))
+    conn.commit()
+
+    
+def gen_id():
+    return str(uuid.uuid4())
+
+today = datetime(2025, 6, 10)
+
+def run_full_simulation():
+    conn = get_db_connection()
+    try:
+        insert_slack_messages(conn)
+        print("✅ Slack messages inserted.")
+    
+    finally:
+        conn.close()
+        
+
+if __name__ == "__main__":
+    run_full_simulation()
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+    )
+
+# ---------- Slack messages (user_1 + user_2) ----------
+def insert_slack_messages(conn):
+   
+    with conn.cursor() as cur:
+        for user_id, text in messages:
+            cur.execute("""
+                INSERT INTO slack_messages_raw (id, channel_id, user_id, text, ts, thread_ts, raw, event_type, parent_id, is_list, list_items, num_list_items)
+                VALUES (%s, 'dev', %s, %s, %s, NULL, '{}'::jsonb, 'message', NULL, FALSE, NULL, NULL)
+            """, (gen_id(), user_id, text, int(today.timestamp())))
+    conn.commit()
+
+
+# ---------- דיווח Slack (user_7) ----------
+def insert_slack_report(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO slack_reports_raw (id, user_id, text, ts, channel_id, report_type, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            gen_id(), "Meitav", "סיימתי את תיקון הבעיה בתצוגה", today,
+            "dev", "progress", "done"
+        ))
+    conn.commit()
+

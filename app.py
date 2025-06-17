@@ -18,11 +18,20 @@ from agent_monitor import agent_monitor
 load_dotenv()
 
 app = Flask(__name__)
-
+MONDAY_API_KEY = os.getenv("MONDAY_API_KEY")
+BOARD_ID = 1963586405
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 if GITHUB_SECRET is None:
     raise RuntimeError("GITHUB_SECRET לא מוגדר בסביבת הריצה")
 GITHUB_SECRET = GITHUB_SECRET.encode()  # המרה ל-כbytes
+
+DB_CONFIG = {
+    'dbname': 'postgres',
+    'user': 'postgres.apphxbmngxlclxromyvt',
+    'password': 'insightbot2025',
+    'host': 'aws-0-eu-north-1.pooler.supabase.com',
+    'port': 6543
+}
 
 
 def get_db_connection():
@@ -64,21 +73,20 @@ def save_dataframe_to_db(df, table_name, pk_column):
         print(f"⚠ הטבלה {table_name} ריקה - לא נשמר כלום")
         return
 
+    # 🛠 ניקוי כל NaT ו-NaN כולל המרת 'NaT' (string) ל-None
+    df = df.where(pd.notnull(df), None)
+
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].apply(
+                lambda x: None if pd.isna(x) or str(x) == 'NaT' else x)
+        elif pd.api.types.is_object_dtype(df[col]):
+            df[col] = df[col].apply(lambda x: None if x in [
+                                    'NaT', 'nan', '', None] else str(x))
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # 🛠 תיקון מרכזי: להמיר כל NaT / NaN ל־None
-        df = df.where(pd.notnull(df), None)
-
-      # המרת NaT לערכי None בפועל
-        for column in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[column]):
-                df[column] = df[column].astype(
-                    object).where(df[column].notna(), None)
-            elif pd.api.types.is_object_dtype(df[column]):
-                df[column] = df[column].apply(
-                    lambda x: str(x) if x is not None else None)
-
         for _, row in df.iterrows():
             cols = ','.join(df.columns)
             placeholders = ','.join(['%s'] * len(df.columns))
@@ -88,7 +96,6 @@ def save_dataframe_to_db(df, table_name, pk_column):
                 INSERT INTO {table_name} ({cols}) VALUES ({placeholders})
                 ON CONFLICT ({pk_column}) DO UPDATE SET {update_cols}
             """
-            
             cursor.execute(sql, tuple(row))
 
         conn.commit()
@@ -100,7 +107,6 @@ def save_dataframe_to_db(df, table_name, pk_column):
 
     except Exception as e:
         print(f"❌ שגיאה בשמירה לטבלה {table_name}: {e}")
-        import traceback
         traceback.print_exc()
         conn.rollback()
     finally:
@@ -192,15 +198,20 @@ def get_user_email(user_id):
 
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
-    data = request.json
+    data = request.get_json()
+
+    # ✅ טפל בבקשת אימות challenge
+    if data.get("type") == "url_verification":
+        print("🔗 Received Slack challenge request")
+        return data.get("challenge", ""), 200, {'Content-Type': 'text/plain'}
+
     print("📥 Slack event received:")
-    # print(json.dumps(data, indent=2))
 
     event = data.get("event", {})
-    if (event.get("type") == "message" and 
-        event.get("subtype") == "file_share" and 
-        "files" in event):
-        
+    if (event.get("type") == "message" and
+        event.get("subtype") == "file_share" and
+            "files" in event):
+
         print("📋📎 התקבלה הודעת קובץ מסוג list (file_share)")
 
         url = event.get("files", [{}])[0].get("url_private_download")
@@ -631,7 +642,78 @@ def github_webhook():
     return "", 200
 
 
+def get_monday_board_data():
+    url = "https://api.monday.com/v2"
+    headers = {
+        "Authorization": MONDAY_API_KEY
+    }
+    query = {
+        'query': f'''{{
+            boards(ids: {BOARD_ID}) {{
+                items {{
+                    name
+                    column_values {{
+                        id
+                        title
+                        text
+                    }}
+                }}
+            }}
+        }}'''
+    }
+    response = requests.post(url, headers=headers, json=query)
+    data = response.json()
+    print("📥 Monday raw response:", response.text)
+
+    return data['data']['boards'][0]['items']
+
+
+def normalize_monday_items(items_data):
+    rows = []
+    for item in items_data:
+        row = {"Name": item["name"]}
+        for col in item["column_values"]:
+            if col["title"] in ["Assigned Team", "Status", "Dependency"]:
+                row[col["title"]] = col.get("text")
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def save_monday_dataframe_to_db(df, table_name):
+    conn = psycopg2.connect(**DB_CONFIG)
+    cur = conn.cursor()
+
+    for _, row in df.iterrows():
+        cur.execute(f'''
+            INSERT INTO {table_name} ("Name", "Assigned Team", "Status", "Dependency")
+            VALUES (%s, %s, %s, %s)
+        ''', (
+            row.get("Name"),
+            row.get("Assigned Team"),
+            row.get("Status"),
+            row.get("Dependency")
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+@app.route("/monday/import", methods=["POST"])
+def monday_import():
+    try:
+        items = get_monday_board_data()
+        df = normalize_monday_items(items)
+        print("📊 עמודות שהגיעו:", df.columns.tolist())
+        save_monday_dataframe_to_db(df, "monday_board_raw")
+
+        return {"status": "success", "rows": len(df)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
 if __name__ == "__main__":
+
     port = int(os.getenv("PORT", 10000))
     print(f"✅ הקובץ app.py התחיל לרוץ ב-port {port}")
     app.run(host="0.0.0.0", port=port)
