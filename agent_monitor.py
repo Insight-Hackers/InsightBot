@@ -495,62 +495,79 @@ def build_user_daily_summary(slack_df, replies_df, slack_reports_df,
 # --- יצירת טבלת project_status_daily ---
 
 
-def build_project_status_daily(github_prs_df, github_issues_df, all_users_df):
-    """בנאי סיכום יומי לסטטוס הפרויקט."""
-    # טיפול ב-DataFrame ריק של PRs
-    if github_prs_df.empty:
-        return pd.DataFrame([{
-            'day': datetime.now().date(),  # תאריך נוכחי
-            'open_prs': 0,
-            'stale_prs': 0,
-            'closed_prs': 0,
-            'critical_issues': 0,
-            'active_contributors': 0
-        }])
+def build_project_status_daily(github_prs_df, github_issues_df, user_summary_df):
+    """בונה טבלת סיכום יומית של סטטוס הפרויקט לפי PRs, Issues ופעילות משתמשים."""
 
-    prs_df = github_prs_df.copy()
-    prs_df['day'] = pd.to_datetime(prs_df['created_at']).dt.date
-    prs_df['closed_day'] = pd.to_datetime(
-        prs_df['closed_at'], errors='coerce').dt.date
+    # --- הוספת עמודות תאריך במידת הצורך ---
+    def ensure_day_column(df, source_col, target_col='day'):
+        if not df.empty and source_col in df.columns:
+            if target_col not in df.columns:
+                df[target_col] = pd.to_datetime(
+                    df[source_col], errors='coerce').dt.date
+        else:
+            df[target_col] = pd.Series(dtype='datetime64[ns]')
 
-    today = prs_df['day'].max()  # קבלת התאריך המקסימלי מנתוני ה-PRs הקיימים
-    if pd.isna(today):  # אם אין PRs בכלל, today יהיה NaT
-        today = pd.Timestamp.utcnow().date()
+    ensure_day_column(github_prs_df, 'created_at', 'day')
+    ensure_day_column(github_prs_df, 'closed_at', 'closed_day')
+    ensure_day_column(github_issues_df, 'created_at', 'created_day')
+    ensure_day_column(github_issues_df, 'closed_at', 'closed_day')
 
-    stale_threshold = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=3)
-    stale_prs = prs_df[(prs_df['state'] == 'open') & (
-        pd.to_datetime(prs_df['created_at']) < stale_threshold)]
+    # --- איסוף כל הימים האפשריים מכל מקורות הנתונים ---
+    days = set()
+    for df, col in [
+        (github_prs_df, 'day'),
+        (github_prs_df, 'closed_day'),
+        (github_issues_df, 'created_day'),
+        (github_issues_df, 'closed_day'),
+        (user_summary_df, 'day')
+    ]:
+        if not df.empty and col in df.columns:
+            days.update(df[col].dropna().unique())
 
-    open_prs_count = prs_df[(prs_df['state'] == 'open')
-                            & (prs_df['day'] == today)].shape[0]
-    closed_prs_count = prs_df[(prs_df['state'] == 'closed') & (
-        prs_df['closed_day'] == today)].shape[0]
-    stale_prs_count = stale_prs.shape[0]
+    if not days:
+        return pd.DataFrame(columns=[
+            'day', 'open_prs', 'stale_prs', 'closed_prs',
+            'critical_issues', 'active_contributors'
+        ])
 
-    critical_issues_count = 0
-    # ודא ש-github_issues_df לא ריק ושיש בו את העמודות הנדרשות
-    if not github_issues_df.empty and all(col in github_issues_df.columns for col in ['is_critical', 'state', 'created_at']):
-        critical_issues_count = github_issues_df[
-            # is_critical יכול להיות עמודה שחסרה
-            (github_issues_df.get('is_critical', False)) &
-            (github_issues_df['state'] == 'open') &
-            (pd.to_datetime(github_issues_df['created_at']).dt.date == today)
-        ].shape[0]
+    # --- חישוב פר יום ---
+    results = []
+    for day in sorted(days):
+        prs_on_day = github_prs_df[
+            github_prs_df['day'] == day
+        ] if 'day' in github_prs_df.columns else pd.DataFrame()
 
-    active_users = 0
-    # ודא ש-all_users_df לא ריק ושיש בו את העמודות הנדרשות
-    if not all_users_df.empty and all(col in all_users_df.columns for col in ['day', 'canonical_username']):
-        active_users = all_users_df[all_users_df['day']
-                                    == today]['canonical_username'].nunique()
+        prs_closed_on_day = github_prs_df[
+            github_prs_df['closed_day'] == day
+        ] if 'closed_day' in github_prs_df.columns else pd.DataFrame()
 
-    return pd.DataFrame([{
-        'day': today,
-        'open_prs': open_prs_count,
-        'stale_prs': stale_prs_count,
-        'closed_prs': closed_prs_count,
-        'critical_issues': critical_issues_count,
-        'active_contributors': active_users
-    }])
+        stale_threshold = pd.Timestamp(day, tz="UTC") - pd.Timedelta(days=3)
+        stale_prs = github_prs_df[
+            (github_prs_df.get('state') == 'open') &
+            (pd.to_datetime(github_prs_df.get('created_at'),
+             errors='coerce') < stale_threshold)
+        ] if not github_prs_df.empty else pd.DataFrame()
+
+        critical_issues = github_issues_df[
+            (github_issues_df.get('created_day') == day) &
+            (github_issues_df.get('is_critical') == True) &
+            (github_issues_df.get('state') == 'open')
+        ] if not github_issues_df.empty else pd.DataFrame()
+
+        active_users = user_summary_df[
+            user_summary_df.get('day') == day
+        ]['canonical_username'].nunique() if 'day' in user_summary_df.columns else 0
+
+        results.append({
+            'day': day,
+            'open_prs': prs_on_day[prs_on_day.get('state') == 'open'].shape[0],
+            'closed_prs': prs_closed_on_day[prs_closed_on_day.get('state') == 'closed'].shape[0],
+            'stale_prs': stale_prs.shape[0],
+            'critical_issues': critical_issues.shape[0],
+            'active_contributors': active_users
+        })
+
+    return pd.DataFrame(results)
 
 # --- יצירת טבלת alerts ---
 
@@ -888,14 +905,23 @@ def agent_monitor():
         assert user_summary_df['canonical_username'].notna(
         ).all(), "❌ user_id חסר"
 
+
 # המשך שמירה
+        user_summary_df["user_id"] = user_summary_df["canonical_username"]
+        user_summary_df = user_summary_df.drop(columns=["canonical_username"])
+
         save_dataframe_to_db(
-            user_summary_df,  # לא לשנות שם עמודה כאן
+            user_summary_df,
             'user_daily_summary',
-            conflict_columns=['canonical_username', 'day']
+            conflict_columns=['user_id', 'day']
         )
 
-        save_dataframe_to_db(project_status_daily_df, 'project_status_daily')
+        save_dataframe_to_db(
+            project_status_daily_df,
+            'project_status_daily',
+            conflict_columns=['day']
+        )
+
         save_dataframe_to_db(alerts_df, 'alerts')
 
         print("✅ הנתונים נותחו ונשמרו לטבלאות Supabase בהצלחה")
