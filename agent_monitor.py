@@ -862,7 +862,8 @@ def agent_monitor():
             latest_date = user_summary_df['day'].max()
             if not user_summary_df.empty:
                 latest_ts = slack_df['ts'].max()
-            latest_dt = datetime.fromtimestamp(float(latest_ts))
+            latest_dt = datetime.fromtimestamp(
+                float(latest_ts), tz=timezone.utc)
             update_last_processed_time("slack_messages_raw", latest_dt)
             print(
                 f"🕓 עודכן התאריך האחרון שטופל בטבלה agent_progress: {latest_dt}")
